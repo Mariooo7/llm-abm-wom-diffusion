@@ -1,0 +1,20 @@
+# Python ABM Simulation Dependencies
+# Core simulation (Mesa + NetworkX + Data Analysis)
+mesa>=3.3.1
+networkx>=3.6.1
+numpy>=2.4.2
+pandas>=3.0.1
+matplotlib>=3.10.8
+seaborn>=0.13.2
+scipy>=1.17.1
+tqdm>=4.67.3
+pyyaml>=6.0.3
+loguru>=0.7.3
+
+# Optional: LLM integration
+# openai>=1.60.0
+# dashscope>=1.22.0
+
+# Development
+pytest>=9.0.2
+pytest-cov>=5.0.0

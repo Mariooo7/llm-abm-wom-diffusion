@@ -1,0 +1,85 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data (keep structure, ignore content)
+data/raw/*.csv
+data/raw/*.json
+data/raw/*.pkl
+data/processed/*.csv
+data/processed/*.pkl
+data/results/*.csv
+data/results/*.pkl
+data/results/*.png
+data/results/*.pdf
+
+# Keep .gitkeep files
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/results/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# Environment variables
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.temp
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+
+# ruff
+.ruff_cache/
+
+# Documents (optional - can be committed if needed)
+docs/drafts/
+docs/notes/
