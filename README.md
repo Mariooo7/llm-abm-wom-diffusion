@@ -164,7 +164,7 @@ go run cmd/main.go
 | 包 | 版本 | 用途 |
 |----|------|------|
 | github.com/cloudwego/eino | v0.7.0 | LLM 编排框架 |
-| github.com/cloudwego/eino-ext | latest | Eino 扩展 (OpenAI/Dashscope) |
+| github.com/cloudwego/eino-ext | latest | Eino 扩展 (OpenAI 兼容接口) |
 
 ---
 
@@ -175,11 +175,11 @@ go run cmd/main.go
 | 参数 | 值 | 说明 |
 |------|-----|------|
 | N | 200 | 智能体数量 |
-| T | 100 | 仿真步数 |
+| T | 60 | 仿真步数 |
 | p | 0.01 | 创新系数 (Bass 模型) |
 | q | 0.3 | 模仿系数 (Bass 模型) |
 | K | 8 | 网络平均度数 |
-| repetitions | 20 | Monte Carlo 重复次数 |
+| repetitions | 15 | Monte Carlo 重复次数 |
 
 ### 实验组
 
@@ -262,6 +262,9 @@ go test ./... -v -cover
 
 ## 📚 相关文档
 
+- [项目上下文](../PROJECT_CONTEXT.md)
+- [CodeMap](docs/CODEMAP.md)
+- [项目进展](docs/PROJECT_PROGRESS.md)
 - [实验设计文档](../../04_实验设计/实验设计与分析流程_v1.0.md)
 - [文献综述](../../02_文献综述/文献综述_v1.0.md)
 - [技术栈调研](../../毕业论文_技术栈调研与执行计划.md)

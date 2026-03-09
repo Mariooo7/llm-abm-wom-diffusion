@@ -17,7 +17,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// 初始化 LLM (使用 Dashscope/通义千问)
+	// 初始化 LLM（供应商由环境变量决定）
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
 		Model:  os.Getenv("LLM_MODEL"),
 		APIKey: os.Getenv("LLM_API_KEY"),

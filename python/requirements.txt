@@ -13,7 +13,6 @@ loguru>=0.7.3
 
 # Optional: LLM integration
 # openai>=1.60.0
-# dashscope>=1.22.0
 
 # Development
 pytest>=9.0.2

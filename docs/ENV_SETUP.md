@@ -128,10 +128,10 @@ nano .env
 
 ```bash
 # LLM 配置
-LLM_PROVIDER=dashscope
-LLM_API_KEY=sk-your-actual-api-key-here  # ← 替换这里
-LLM_MODEL=qwen3.5-plus
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_PROVIDER=to_be_decided
+LLM_API_KEY=your-actual-api-key-here
+LLM_MODEL=to_be_decided
+LLM_BASE_URL=https://api.example.com/v1
 
 # 实验配置
 EXPERIMENT_GROUP=A
@@ -141,22 +141,10 @@ USE_LLM=false  # true=使用 LLM, false=使用启发式
 
 ### 4. 获取 API Key
 
-**Dashscope (通义千问)**:
-1. 访问：https://dashscope.console.aliyun.com/
-2. 登录阿里云账号
-3. 开通 Dashscope 服务
-4. 创建 API Key
-5. 复制到 `.env`
-
-**OpenAI (可选)**:
-1. 访问：https://platform.openai.com/api-keys
-2. 创建新的 API Key
-3. 修改 `.env`:
-   ```bash
-   LLM_PROVIDER=openai
-   LLM_API_KEY=sk-proj-xxxxx
-   LLM_BASE_URL=https://api.openai.com/v1
-   ```
+1. 按最终确定的供应商创建 API Key
+2. 将 API Key 写入 `.env` 的 `LLM_API_KEY`
+3. 同步填写 `LLM_PROVIDER`、`LLM_MODEL`、`LLM_BASE_URL`
+4. 在正式实验前执行一次最小调用验证
 
 ---
 

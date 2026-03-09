@@ -270,10 +270,10 @@ B,0.65,0.05,35.8,H1:Yes,H2:No,H3:Partial
 
 ```bash
 # .env
-LLM_PROVIDER=dashscope
+LLM_PROVIDER=to_be_decided
 LLM_API_KEY=sk-xxx
-LLM_MODEL=qwen3.5-plus
-LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=to_be_decided
+LLM_BASE_URL=https://api.example.com/v1
 
 # 实验配置
 EXPERIMENT_GROUP=A

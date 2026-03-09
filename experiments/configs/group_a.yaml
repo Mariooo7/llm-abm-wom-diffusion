@@ -26,14 +26,14 @@ simulation:
   n_steps: 60  # 简化：从 100 减少到 60，扩散曲线通常在 50-60 步达到稳定
   n_repetitions: 15  # 简化：从 20 减少到 15，ABM 标准建议 (Gilbert, 2008)
   seed: 42
-  use_llm: true  # true=使用 LLM, false=使用启发式
+  use_llm: false  # 默认启发式；正式实验前按已确认模型策略再开启
   llm_sampling_ratio: 1.0  # 100% 决策使用 LLM（保持研究设计）
   
 # LLM 配置 (可选)
 llm:
-  provider: "dashscope"  # dashscope | openai
-  model: "qwen3.5-plus"
-  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  provider: "to_be_decided"
+  model: "to_be_decided"
+  base_url: "https://api.example.com/v1"
   # api_key: ${LLM_API_KEY}  # 从环境变量读取
 
 # 输出配置

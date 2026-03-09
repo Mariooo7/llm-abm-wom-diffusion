@@ -28,7 +28,6 @@ dev = [
 ]
 llm = [
     "openai>=1.60.0",
-    "dashscope>=1.22.0",
 ]
 
 [build-system]
