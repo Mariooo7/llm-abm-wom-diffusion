@@ -163,8 +163,8 @@ go run cmd/main.go
 
 | 包 | 版本 | 用途 |
 |----|------|------|
-| github.com/cloudwego/eino | v0.7.0 | LLM 编排框架 |
-| github.com/cloudwego/eino-ext | latest | Eino 扩展 (OpenAI 兼容接口) |
+| github.com/cloudwego/eino | v0.7.13 | LLM 编排框架 |
+| github.com/cloudwego/eino-ext/components/model/openai | v0.1.8 | OpenAI 兼容模型接入 |
 
 ---
 
@@ -174,7 +174,7 @@ go run cmd/main.go
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
-| N | 200 | 智能体数量 |
+| N | 100 | 智能体数量 |
 | T | 60 | 仿真步数 |
 | p | 0.01 | 创新系数 (Bass 模型) |
 | q | 0.3 | 模仿系数 (Bass 模型) |
@@ -224,9 +224,8 @@ go run cmd/main.go
 
 ### 通信方式
 
-1. **本地模式**: Python 直接调用 Go 编译的二进制文件
-2. **RPC 模式**: Go 作为 gRPC 服务，Python 通过 RPC 调用
-3. **混合模式**: 关键决策调用 Go，简单决策使用 Python 启发式规则
+- **唯一模式**: Python 通过 HTTP 调用 Go(Eino) `/decide` 统一入口
+- **失败策略**: fail-fast，调用失败立即中止当前仿真并报错
 
 ---
 

@@ -48,7 +48,7 @@ while model.running and step < 20:  # 预实验只跑 20 步
     step += 1
     
     if step % 5 == 0:
-        adopters = sum(1 for a in model.agents.values() if a.memory.has_adopted)
+        adopters = sum(1 for a in model.population.values() if a.memory.has_adopted)
         rate = adopters / config.n_agents
         logger.info(f'步数 {step}: 采纳者 {adopters}/{config.n_agents} ({rate:.1%})')
 

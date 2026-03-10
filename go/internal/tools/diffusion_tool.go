@@ -2,9 +2,9 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
 )
 
 // DiffusionTool 扩散分析工具
@@ -12,12 +12,12 @@ type DiffusionTool struct{}
 
 // DiffusionInput 输入参数
 type DiffusionInput struct {
-	ProductInfo     string  `json:"product_info" jsonschema:"产品信息"`
-	WOMContent      string  `json:"wom_content" jsonschema:"口碑内容"`
+	ProductInfo      string  `json:"product_info" jsonschema:"产品信息"`
+	WOMContent       string  `json:"wom_content" jsonschema:"口碑内容"`
 	EmotionIntensity float64 `json:"emotion_intensity" jsonschema:"情感强度 (0-1)"`
-	AdoptedRatio    float64 `json:"adopted_ratio" jsonschema:"已采纳朋友比例 (0-1)"`
-	RiskTolerance   float64 `json:"risk_tolerance" jsonschema:"风险偏好 (0-10)"`
-	Openness        float64 `json:"openness" jsonschema:"开放性 (0-10)"`
+	AdoptedRatio     float64 `json:"adopted_ratio" jsonschema:"已采纳朋友比例 (0-1)"`
+	RiskTolerance    float64 `json:"risk_tolerance" jsonschema:"风险偏好 (0-10)"`
+	Openness         float64 `json:"openness" jsonschema:"开放性 (0-10)"`
 }
 
 // DiffusionOutput 输出结果
@@ -33,13 +33,8 @@ func NewDiffusionTool() *DiffusionTool {
 }
 
 // ToTool 转换为 eino Tool
-func (t *DiffusionTool) ToTool() tool.BaseTool {
-	return tool.BaseTool{
-		Impl: t.Analyze,
-		Name: "analyze_diffusion",
-		Desc: "分析产品扩散决策，返回采纳概率和原因",
-		ParamsOneOf: tool.NewParamsOneOfByParamsType(DiffusionInput{}),
-	}
+func (t *DiffusionTool) ToTool() (tool.BaseTool, error) {
+	return utils.InferTool("analyze_diffusion", "分析产品扩散决策，返回采纳概率和原因", t.Analyze)
 }
 
 // Analyze 分析扩散决策
@@ -113,13 +108,8 @@ func NewSentimentTool() *SentimentTool {
 }
 
 // ToTool 转换为 eino Tool
-func (t *SentimentTool) ToTool() tool.BaseTool {
-	return tool.BaseTool{
-		Impl: t.Analyze,
-		Name: "analyze_sentiment",
-		Desc: "分析文本的情感倾向和强度",
-		ParamsOneOf: tool.NewParamsOneOfByParamsType(SentimentInput{}),
-	}
+func (t *SentimentTool) ToTool() (tool.BaseTool, error) {
+	return utils.InferTool("analyze_sentiment", "分析文本的情感倾向和强度", t.Analyze)
 }
 
 // Analyze 分析情感

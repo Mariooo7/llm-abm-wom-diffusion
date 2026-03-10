@@ -190,10 +190,10 @@ class AgentProfile:
 
 # 函数/变量：小写 + 下划线
 def generate_network():
-    n_agents = 200
+    n_agents = 100
 
 # 常量：大写 + 下划线
-DEFAULT_N_AGENTS = 200
+DEFAULT_N_AGENTS = 100
 
 # 私有：前缀下划线
 def _internal_helper():
@@ -253,15 +253,13 @@ def test_generate_small_world_network():
 
 ### Q: 如何处理 LLM API 调用失败？
 
-A: 实现重试机制和降级策略：
+A: 采用 fail-fast 并记录失败样本：
 ```python
-@retry(max_attempts=3, delay=1.0)
 def call_llm(prompt: str) -> str:
-    try:
-        return llm_client.generate(prompt)
-    except APIError:
-        logger.warning("LLM API failed, using heuristic fallback")
-        return heuristic_decision(prompt)
+    response = llm_client.generate(prompt)
+    if not response:
+        raise RuntimeError("LLM decision failed")
+    return response
 ```
 
 ### Q: 如何确保仿真可复现？

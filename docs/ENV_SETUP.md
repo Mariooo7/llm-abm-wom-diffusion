@@ -1,6 +1,6 @@
 # 🚀 环境配置指南
 
-**最后更新**: 2026-03-02
+**最后更新**: 2026-03-10
 
 ---
 
@@ -128,15 +128,18 @@ nano .env
 
 ```bash
 # LLM 配置
-LLM_PROVIDER=to_be_decided
+LLM_PROVIDER=aliyun_bailian
 LLM_API_KEY=your-actual-api-key-here
-LLM_MODEL=to_be_decided
-LLM_BASE_URL=https://api.example.com/v1
+LLM_MODEL=qwen3.5-flash
+LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_TEMPERATURE=0.2
+LLM_MAX_TOKENS=700
+LLM_SEED=42
 
 # 实验配置
 EXPERIMENT_GROUP=A
-N_REPETITIONS=20
-USE_LLM=false  # true=使用 LLM, false=使用启发式
+N_REPETITIONS=15
+USE_LLM=true
 ```
 
 ### 4. 获取 API Key
@@ -145,6 +148,13 @@ USE_LLM=false  # true=使用 LLM, false=使用启发式
 2. 将 API Key 写入 `.env` 的 `LLM_API_KEY`
 3. 同步填写 `LLM_PROVIDER`、`LLM_MODEL`、`LLM_BASE_URL`
 4. 在正式实验前执行一次最小调用验证
+
+### 5. 参数建议与调优方向
+
+- `LLM_TEMPERATURE=0.2`：偏稳定、低发散，适合学术化表达与复核。
+- `LLM_MAX_TOKENS=700`：对“结论+机制+指标”结构化输出通常足够，控制成本与延迟。
+- `LLM_SEED=42`：在模型支持时降低同条件波动，增强可复现性。
+- 若输出经常被截断，可将 `LLM_MAX_TOKENS` 调高到 `900~1200`。
 
 ---
 
@@ -200,7 +210,13 @@ go run cmd/main.go
 
 **预期输出**:
 ```
-Agent: 分析结果显示...
+Provider: aliyun_bailian
+Model: qwen3.5-flash
+Temperature: 0.20
+MaxTokens: 700
+Assistant: ...
+TokenUsage => model_calls=1 input_tokens=552 output_tokens=486 total_tokens=1038
+TokenUsageAvgPerCall => input=552.00 output=486.00 total=1038.00
 ```
 
 ---

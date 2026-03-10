@@ -1,0 +1,210 @@
+import json
+import os
+import subprocess
+import time
+from atexit import register
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+from urllib import error, request
+
+
+@dataclass
+class DecisionRequest:
+    agent_id: int
+    openness: float
+    risk_tolerance: float
+    adopted_ratio: float
+    emotion_arousal: float
+    wom_strength: str
+    wom_messages: list[str]
+    innovation_coef: float
+    imitation_coef: float
+
+
+@dataclass
+class DecisionResult:
+    adopt: bool
+    probability: float
+    reasoning: str
+    source: str
+
+
+class DecisionServiceError(RuntimeError):
+    pass
+
+
+class DecisionClient:
+    def __init__(
+        self,
+        *,
+        model: str,
+        base_url: str,
+        api_key_env: str,
+        temperature: float,
+        max_tokens: int,
+        timeout_seconds: int,
+        gateway_url: str,
+        gateway_autostart: bool,
+    ) -> None:
+        self.model = model
+        self.base_url = base_url
+        self.api_key_env = api_key_env
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.timeout_seconds = timeout_seconds
+        self.gateway_url = gateway_url
+        self.gateway_autostart = gateway_autostart
+        if os.getenv(api_key_env, "").strip() == "":
+            raise DecisionServiceError(f"missing api key env: {api_key_env}")
+        self.model_calls = 0
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.total_tokens = 0
+        self._server_process: subprocess.Popen[str] | None = None
+        self._server_log_handle: Any | None = None
+        self._ensure_gateway()
+
+    def _project_root(self) -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    def _health_url(self) -> str:
+        return self.gateway_url.replace("/decide", "/health")
+
+    def _gateway_alive(self) -> bool:
+        health_req = request.Request(self._health_url(), method="GET")
+        try:
+            with request.urlopen(health_req, timeout=self.timeout_seconds) as resp:
+                status_code = int(getattr(resp, "status", 0))
+                return 200 <= status_code < 300
+        except Exception:
+            return False
+
+    def _stop_gateway(self) -> None:
+        if self._server_process is None:
+            if self._server_log_handle is not None:
+                self._server_log_handle.close()
+                self._server_log_handle = None
+            return
+        if self._server_process.poll() is None:
+            self._server_process.terminate()
+        if self._server_log_handle is not None:
+            self._server_log_handle.close()
+            self._server_log_handle = None
+
+    def _start_gateway(self) -> None:
+        go_dir = self._project_root() / "go"
+        log_dir = self._project_root() / "data" / "results"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "go_gateway_autostart.log"
+        env = os.environ.copy()
+        env["EINO_MODE"] = "decision_server"
+        env["EINO_SERVER_ADDR"] = self.gateway_url.removeprefix("http://").split("/")[0]
+        env["LLM_MODEL"] = self.model
+        env["LLM_BASE_URL"] = self.base_url
+        env["LLM_TEMPERATURE"] = str(self.temperature)
+        env["LLM_MAX_TOKENS"] = str(self.max_tokens)
+        env["LLM_REQUEST_TIMEOUT_SECONDS"] = str(self.timeout_seconds)
+        env["LLM_DECISION_MAX_ITERATIONS"] = "1"
+        self._server_log_handle = log_path.open("a", encoding="utf-8")
+        self._server_process = subprocess.Popen(
+            ["go", "run", "cmd/main.go"],
+            cwd=str(go_dir),
+            env=env,
+            stdout=self._server_log_handle,
+            stderr=self._server_log_handle,
+            text=True,
+        )
+        register(self._stop_gateway)
+
+    def _ensure_gateway(self) -> None:
+        if self._gateway_alive():
+            return
+        if not self.gateway_autostart:
+            raise DecisionServiceError("gateway unavailable and autostart disabled")
+        try:
+            self._start_gateway()
+        except Exception as exc:
+            raise DecisionServiceError(f"failed to start gateway: {exc}") from exc
+        for _ in range(25):
+            if self._gateway_alive():
+                return
+            time.sleep(0.2)
+        raise DecisionServiceError("gateway startup timeout")
+
+    def _parse_content(self, content: str) -> DecisionResult:
+        data = json.loads(content)
+        probability = float(data.get("probability", 0.0))
+        probability = max(0.0, min(1.0, probability))
+        adopt = bool(data.get("adopt", probability >= 0.5))
+        reasoning = str(data.get("reasoning", ""))
+        source = str(data.get("source", "llm_eino"))
+        return DecisionResult(
+            adopt=adopt,
+            probability=probability,
+            reasoning=reasoning,
+            source=source,
+        )
+
+    def _build_payload(self, req: DecisionRequest, context_key: str) -> dict[str, Any]:
+        return {
+            "agent_id": req.agent_id,
+            "openness": round(req.openness, 4),
+            "risk_tolerance": round(req.risk_tolerance, 4),
+            "adopted_ratio": round(req.adopted_ratio, 4),
+            "emotion_arousal": round(req.emotion_arousal, 4),
+            "wom_strength": req.wom_strength,
+            "wom_messages": req.wom_messages[-5:],
+            "innovation_coef": round(req.innovation_coef, 4),
+            "imitation_coef": round(req.imitation_coef, 4),
+            "context_key": context_key,
+        }
+
+    def _call_gateway(self, payload: dict[str, Any]) -> dict[str, Any]:
+        req = request.Request(
+            self.gateway_url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        retryable_codes = {502, 503, 504}
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                with request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                    body = resp.read().decode("utf-8")
+                    parsed = json.loads(body)
+                    if isinstance(parsed, dict):
+                        return parsed
+                    raise ValueError("gateway response is not a JSON object")
+            except error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="ignore")
+                if exc.code in retryable_codes and attempt == 0:
+                    time.sleep(0.8)
+                    continue
+                raise DecisionServiceError(f"gateway http error {exc.code}: {detail}") from exc
+            except error.URLError as exc:
+                last_exc = exc
+                if attempt == 0:
+                    time.sleep(0.8)
+                    continue
+                raise DecisionServiceError(f"gateway unavailable: {exc}") from exc
+            except TimeoutError as exc:
+                last_exc = exc
+                if attempt == 0:
+                    time.sleep(0.8)
+                    continue
+                raise DecisionServiceError(f"gateway timeout: {exc}") from exc
+        if last_exc is not None:
+            raise DecisionServiceError(f"gateway unavailable: {last_exc}") from last_exc
+        raise DecisionServiceError("gateway unavailable: unknown error")
+
+    def decide(self, req: DecisionRequest, context_key: str) -> DecisionResult:
+        payload = self._build_payload(req, context_key)
+        response = self._call_gateway(payload)
+        result = self._parse_content(json.dumps(response, ensure_ascii=False))
+        self.model_calls += int(response.get("model_calls", 1) or 0)
+        self.prompt_tokens += int(response.get("prompt_tokens", 0) or 0)
+        self.completion_tokens += int(response.get("completion_tokens", 0) or 0)
+        self.total_tokens += int(response.get("total_tokens", 0) or 0)
+        return result

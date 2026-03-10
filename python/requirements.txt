@@ -10,9 +10,7 @@ scipy>=1.17.1
 tqdm>=4.67.3
 pyyaml>=6.0.3
 loguru>=0.7.3
-
-# Optional: LLM integration
-# openai>=1.60.0
+openai>=1.60.0
 
 # Development
 pytest>=9.0.2
