@@ -25,7 +25,6 @@ class SimulationConfig:
     llm_base_url: str
     llm_api_key_env: str
     llm_temperature: float
-    llm_max_tokens: int
     llm_timeout_seconds: int
     llm_gateway_url: str
     llm_gateway_autostart: bool
@@ -72,7 +71,6 @@ def get_config(group: str) -> SimulationConfig:
         ),
         llm_api_key_env=str(llm.get("api_key_env", "LLM_API_KEY")),
         llm_temperature=float(llm.get("temperature", 0.2)),
-        llm_max_tokens=int(llm.get("max_tokens", 220)),
         llm_timeout_seconds=int(llm.get("timeout_seconds", 30)),
         llm_gateway_url=str(llm.get("gateway_url", "http://127.0.0.1:18080/decide")),
         llm_gateway_autostart=bool(llm.get("gateway_autostart", True)),

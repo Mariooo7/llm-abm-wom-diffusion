@@ -35,7 +35,6 @@ llm:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   api_key_env: "LLM_API_KEY"
   temperature: 0.2
-  max_tokens: 220
   timeout_seconds: 90
   gateway_url: "http://127.0.0.1:18080/decide"
   gateway_autostart: true

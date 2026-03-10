@@ -47,7 +47,6 @@ class DiffusionModel(Model):
             base_url=config.llm_base_url,
             api_key_env=config.llm_api_key_env,
             temperature=config.llm_temperature,
-            max_tokens=config.llm_max_tokens,
             timeout_seconds=config.llm_timeout_seconds,
             gateway_url=config.llm_gateway_url,
             gateway_autostart=config.llm_gateway_autostart,

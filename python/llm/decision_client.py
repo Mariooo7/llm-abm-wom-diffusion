@@ -3,8 +3,10 @@ import os
 import subprocess
 import time
 from atexit import register
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Any
 from urllib import error, request
 
@@ -30,6 +32,12 @@ class DecisionResult:
     source: str
 
 
+@dataclass
+class DecisionTask:
+    req: DecisionRequest
+    context_key: str
+
+
 class DecisionServiceError(RuntimeError):
     pass
 
@@ -42,7 +50,6 @@ class DecisionClient:
         base_url: str,
         api_key_env: str,
         temperature: float,
-        max_tokens: int,
         timeout_seconds: int,
         gateway_url: str,
         gateway_autostart: bool,
@@ -51,7 +58,6 @@ class DecisionClient:
         self.base_url = base_url
         self.api_key_env = api_key_env
         self.temperature = temperature
-        self.max_tokens = max_tokens
         self.timeout_seconds = timeout_seconds
         self.gateway_url = gateway_url
         self.gateway_autostart = gateway_autostart
@@ -61,6 +67,7 @@ class DecisionClient:
         self.prompt_tokens = 0
         self.completion_tokens = 0
         self.total_tokens = 0
+        self._usage_lock = Lock()
         self._server_process: subprocess.Popen[str] | None = None
         self._server_log_handle: Any | None = None
         self._ensure_gateway()
@@ -98,14 +105,11 @@ class DecisionClient:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "go_gateway_autostart.log"
         env = os.environ.copy()
-        env["EINO_MODE"] = "decision_server"
-        env["EINO_SERVER_ADDR"] = self.gateway_url.removeprefix("http://").split("/")[0]
+        env["LLM_SERVER_ADDR"] = self.gateway_url.removeprefix("http://").split("/")[0]
         env["LLM_MODEL"] = self.model
         env["LLM_BASE_URL"] = self.base_url
         env["LLM_TEMPERATURE"] = str(self.temperature)
-        env["LLM_MAX_TOKENS"] = str(self.max_tokens)
         env["LLM_REQUEST_TIMEOUT_SECONDS"] = str(self.timeout_seconds)
-        env["LLM_DECISION_MAX_ITERATIONS"] = "1"
         self._server_log_handle = log_path.open("a", encoding="utf-8")
         self._server_process = subprocess.Popen(
             ["go", "run", "cmd/main.go"],
@@ -138,7 +142,7 @@ class DecisionClient:
         probability = max(0.0, min(1.0, probability))
         adopt = bool(data.get("adopt", probability >= 0.5))
         reasoning = str(data.get("reasoning", ""))
-        source = str(data.get("source", "llm_eino"))
+        source = str(data.get("source", "llm_http_direct"))
         return DecisionResult(
             adopt=adopt,
             probability=probability,
@@ -167,44 +171,50 @@ class DecisionClient:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        retryable_codes = {502, 503, 504}
-        last_exc: Exception | None = None
-        for attempt in range(2):
-            try:
-                with request.urlopen(req, timeout=self.timeout_seconds) as resp:
-                    body = resp.read().decode("utf-8")
-                    parsed = json.loads(body)
-                    if isinstance(parsed, dict):
-                        return parsed
-                    raise ValueError("gateway response is not a JSON object")
-            except error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="ignore")
-                if exc.code in retryable_codes and attempt == 0:
-                    time.sleep(0.8)
-                    continue
-                raise DecisionServiceError(f"gateway http error {exc.code}: {detail}") from exc
-            except error.URLError as exc:
-                last_exc = exc
-                if attempt == 0:
-                    time.sleep(0.8)
-                    continue
-                raise DecisionServiceError(f"gateway unavailable: {exc}") from exc
-            except TimeoutError as exc:
-                last_exc = exc
-                if attempt == 0:
-                    time.sleep(0.8)
-                    continue
-                raise DecisionServiceError(f"gateway timeout: {exc}") from exc
-        if last_exc is not None:
-            raise DecisionServiceError(f"gateway unavailable: {last_exc}") from last_exc
-        raise DecisionServiceError("gateway unavailable: unknown error")
+        try:
+            with request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                body = resp.read().decode("utf-8")
+                parsed = json.loads(body)
+                if isinstance(parsed, dict):
+                    return parsed
+                raise ValueError("gateway response is not a JSON object")
+        except error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="ignore")
+            raise DecisionServiceError(f"gateway http error {exc.code}: {detail}") from exc
+        except error.URLError as exc:
+            raise DecisionServiceError(f"gateway unavailable: {exc}") from exc
+        except TimeoutError as exc:
+            raise DecisionServiceError(f"gateway timeout: {exc}") from exc
 
     def decide(self, req: DecisionRequest, context_key: str) -> DecisionResult:
         payload = self._build_payload(req, context_key)
         response = self._call_gateway(payload)
         result = self._parse_content(json.dumps(response, ensure_ascii=False))
-        self.model_calls += int(response.get("model_calls", 1) or 0)
-        self.prompt_tokens += int(response.get("prompt_tokens", 0) or 0)
-        self.completion_tokens += int(response.get("completion_tokens", 0) or 0)
-        self.total_tokens += int(response.get("total_tokens", 0) or 0)
+        self._merge_usage(response)
         return result
+
+    def _merge_usage(self, response: dict[str, Any]) -> None:
+        with self._usage_lock:
+            self.model_calls += int(response.get("model_calls", 1) or 0)
+            self.prompt_tokens += int(response.get("prompt_tokens", 0) or 0)
+            self.completion_tokens += int(response.get("completion_tokens", 0) or 0)
+            self.total_tokens += int(response.get("total_tokens", 0) or 0)
+
+    def decide_many(self, tasks: list[DecisionTask], concurrency: int = 10) -> list[DecisionResult]:
+        if not tasks:
+            return []
+        workers = max(1, min(concurrency, len(tasks)))
+        results: list[DecisionResult | None] = [None] * len(tasks)
+
+        def _run_one(index: int, task: DecisionTask) -> tuple[int, DecisionResult]:
+            return index, self.decide(task.req, task.context_key)
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [
+                pool.submit(_run_one, idx, task)
+                for idx, task in enumerate(tasks)
+            ]
+            for future in as_completed(futures):
+                idx, result = future.result()
+                results[idx] = result
+        return [item for item in results if item is not None]
