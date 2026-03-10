@@ -13,12 +13,12 @@ network:
 # 口碑语义配置
 wom:
   strength: "weak"  # strong | weak
-  emotion_arousal: 0.15  # 0-1, calibrated to avoid saturation
+  emotion_arousal: 0.12  # 0-1
   valence: "positive"
 
 # Bass 模型参数
 bass:
-  innovation_coef: 0.003  # p
+  innovation_coef: 0.001  # p
   imitation_coef: 0.09    # q
 
 # 仿真配置
