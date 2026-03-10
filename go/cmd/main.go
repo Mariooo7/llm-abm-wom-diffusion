@@ -309,6 +309,7 @@ func buildChatCompletionsURL(baseURL string) string {
 
 func isRetriableStatus(statusCode int) bool {
 	return statusCode == http.StatusBadGateway ||
+		statusCode == http.StatusTooManyRequests ||
 		statusCode == http.StatusServiceUnavailable ||
 		statusCode == http.StatusGatewayTimeout
 }
@@ -442,6 +443,11 @@ func runDecision(ctx context.Context, client *http.Client, cfg llmRuntimeConfig,
 
 func runDecisionServer(ctx context.Context, cfg llmRuntimeConfig) error {
 	httpClient := &http.Client{Timeout: runtimeTimeout(cfg)}
+	maxInflight := parseIntOrDefault(strings.TrimSpace(os.Getenv("LLM_MAX_INFLIGHT")), 4)
+	if maxInflight < 1 {
+		maxInflight = 1
+	}
+	inflight := make(chan struct{}, maxInflight)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
@@ -455,6 +461,13 @@ func runDecisionServer(ctx context.Context, cfg llmRuntimeConfig) error {
 		var req decisionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid json body", http.StatusBadRequest)
+			return
+		}
+		select {
+		case inflight <- struct{}{}:
+			defer func() { <-inflight }()
+		case <-r.Context().Done():
+			http.Error(w, "request canceled", http.StatusGatewayTimeout)
 			return
 		}
 		res, err := runDecision(r.Context(), httpClient, cfg, req)
@@ -474,10 +487,11 @@ func runDecisionServer(ctx context.Context, cfg llmRuntimeConfig) error {
 	}
 	fmt.Printf("DecisionServer listening on http://%s\n", addr)
 	fmt.Printf(
-		"DecisionRuntime: timeout_seconds=%d enable_thinking=%t retry_attempts=%d mode=direct_http\n",
+		"DecisionRuntime: timeout_seconds=%d enable_thinking=%t retry_attempts=%d max_inflight=%d mode=direct_http\n",
 		cfg.requestTimeoutSec,
 		cfg.enableThinking,
 		cfg.maxRetryAttempts,
+		maxInflight,
 	)
 	return server.ListenAndServe()
 }

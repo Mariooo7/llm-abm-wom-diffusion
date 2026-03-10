@@ -6,7 +6,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from config.settings import SimulationConfig, get_config
 from llm.decision_client import DecisionClient, DecisionRequest, DecisionTask
@@ -105,42 +105,83 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
 
+    def _is_retriable_error_message(message: str) -> bool:
+        msg = message.lower()
+        if "gateway timeout" in msg or "timed out" in msg:
+            return True
+        if "gateway unavailable" in msg:
+            return True
+        if "http error 429" in msg:
+            return True
+        if "status=429" in msg or "limit_burst_rate" in msg:
+            return True
+        if "http error 502" in msg or "http error 503" in msg or "http error 504" in msg:
+            return True
+        if "status=502" in msg or "status=503" in msg or "status=504" in msg:
+            return True
+        return False
+
+    def _retry_sleep_seconds(attempt_index: int) -> float:
+        base = cast(float, args.retry_backoff_seconds)
+        if base <= 0:
+            return 0.0
+        if attempt_index <= 0:
+            return base
+        return base * (2.0**attempt_index)
+
     def _run_task(group: str, rep: int, seed: int) -> dict[str, Any]:
-        cfg = build_config(group, seed, args.n_agents, args.n_steps, args.timeout_seconds)
-        raw_path = raw_dir / f"simulation_{cfg.group}_{rep}.csv"
-        result = run_one(cfg, args.log_interval, raw_path)
-        model_slug = str(cfg.llm_model).replace("/", "_")
-        metrics_payload = {
-            "group": cfg.group,
-            "rep": rep,
-            "seed": cfg.seed,
-            "config": asdict(cfg),
-            "result": result,
-            "raw_file": str(raw_path),
-        }
-        metrics_path = results_dir / f"metrics_{cfg.group}_{rep}.json"
-        metrics_path.write_text(
-            json.dumps(metrics_payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-        row = {
-            "group": cfg.group,
-            "rep": rep,
-            "seed": cfg.seed,
-            "n_agents": cfg.n_agents,
-            "n_steps": cfg.n_steps,
-            "model": model_slug,
-            "final_adoption_rate": result["final_adoption_rate"],
-            "total_adopters": result["total_adopters"],
-            "model_calls": result["llm_usage"]["model_calls"],
-            "prompt_tokens": result["llm_usage"]["prompt_tokens"],
-            "completion_tokens": result["llm_usage"]["completion_tokens"],
-            "total_tokens": result["llm_usage"]["total_tokens"],
-            "elapsed_seconds": result["elapsed_seconds"],
-            "raw_file": str(raw_path),
-            "metrics_file": str(metrics_path),
-        }
-        return row
+        run_retries = cast(int, args.run_retries)
+        attempts_total = max(1, run_retries + 1)
+        last_exc: Exception | None = None
+        for attempt in range(attempts_total):
+            try:
+                cfg = build_config(group, seed, args.n_agents, args.n_steps, args.timeout_seconds)
+                raw_path = raw_dir / f"simulation_{cfg.group}_{rep}.csv"
+                result = run_one(cfg, args.log_interval, raw_path)
+                model_slug = str(cfg.llm_model).replace("/", "_")
+                metrics_payload = {
+                    "group": cfg.group,
+                    "rep": rep,
+                    "seed": cfg.seed,
+                    "attempt": attempt + 1,
+                    "config": asdict(cfg),
+                    "result": result,
+                    "raw_file": str(raw_path),
+                }
+                metrics_path = results_dir / f"metrics_{cfg.group}_{rep}.json"
+                metrics_path.write_text(
+                    json.dumps(metrics_payload, ensure_ascii=False, indent=2),
+                    encoding="utf-8",
+                )
+                row = {
+                    "group": cfg.group,
+                    "rep": rep,
+                    "seed": cfg.seed,
+                    "n_agents": cfg.n_agents,
+                    "n_steps": cfg.n_steps,
+                    "model": model_slug,
+                    "final_adoption_rate": result["final_adoption_rate"],
+                    "total_adopters": result["total_adopters"],
+                    "model_calls": result["llm_usage"]["model_calls"],
+                    "prompt_tokens": result["llm_usage"]["prompt_tokens"],
+                    "completion_tokens": result["llm_usage"]["completion_tokens"],
+                    "total_tokens": result["llm_usage"]["total_tokens"],
+                    "elapsed_seconds": result["elapsed_seconds"],
+                    "raw_file": str(raw_path),
+                    "metrics_file": str(metrics_path),
+                    "attempt": attempt + 1,
+                }
+                return row
+            except Exception as exc:
+                last_exc = exc
+                message = str(exc)
+                retriable = _is_retriable_error_message(message)
+                if attempt >= attempts_total - 1 or not retriable:
+                    raise
+                sleep_seconds = _retry_sleep_seconds(attempt)
+                if sleep_seconds > 0:
+                    time.sleep(sleep_seconds)
+        raise RuntimeError(str(last_exc) if last_exc is not None else "unknown error")
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         future_to_task = {
@@ -179,6 +220,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
         "elapsed_seconds",
         "raw_file",
         "metrics_file",
+        "attempt",
     ]
     with summary_path.open("w", encoding="utf-8", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -441,6 +483,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--concurrency-step", type=int, default=5)
     parser.add_argument("--rounds-per-level", type=int, default=2)
     parser.add_argument("--repetition-workers", type=int, default=1)
+    parser.add_argument("--run-retries", type=int, default=1)
+    parser.add_argument("--retry-backoff-seconds", type=float, default=2.0)
     parser.add_argument("--output-dir", default="data/results")
     parser.add_argument("--raw-dir", default="data/raw")
     parser.add_argument("--summary-file", default="data/results/batch_summary.csv")

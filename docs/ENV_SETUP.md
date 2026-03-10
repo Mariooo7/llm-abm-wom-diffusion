@@ -1,6 +1,6 @@
 # 🚀 环境配置指南
 
-**最后更新**: 2026-03-10
+**最后更新**: 2026-03-11
 
 ---
 
@@ -20,7 +20,7 @@
 ### 1. 创建虚拟环境
 
 ```bash
-cd thesis-simulation/python
+cd thesis-diffusion-simulation/python
 
 # 使用 uv (推荐)
 uv venv
@@ -88,7 +88,7 @@ source ~/.zshrc
 ### 3. 下载依赖
 
 ```bash
-cd thesis-simulation/go
+cd thesis-diffusion-simulation/go
 
 # 下载模块
 go mod download
@@ -112,7 +112,7 @@ ls -lh bin/
 ### 1. 复制环境变量模板
 
 ```bash
-cd thesis-simulation
+cd thesis-diffusion-simulation
 cp .env.example .env
 ```
 
@@ -135,15 +135,19 @@ LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_TEMPERATURE=0.2
 LLM_SEED=42
 LLM_ENABLE_THINKING=false
-LLM_RETRY_MAX_ATTEMPTS=3
-LLM_RETRY_BASE_MS=200
-LLM_RETRY_JITTER_MS=120
+LLM_RETRY_MAX_ATTEMPTS=8
+LLM_RETRY_BASE_MS=600
+LLM_RETRY_JITTER_MS=300
+LLM_MAX_INFLIGHT=3
+LLM_REQUEST_TIMEOUT_SECONDS=180
 LLM_SERVER_ADDR=127.0.0.1:18080
 
-# 实验配置
-EXPERIMENT_GROUP=A
-N_REPETITIONS=15
-USE_LLM=true
+# 正式实验执行参数（可按需覆盖）
+REPETITIONS=15
+REPETITION_WORKERS=4
+RUN_RETRIES=2
+RETRY_BACKOFF_SECONDS=3
+TIMEOUT_SECONDS=180
 ```
 
 ### 4. 获取 API Key
@@ -165,13 +169,10 @@ USE_LLM=true
 ### Python 测试
 
 ```bash
-cd thesis-simulation
+cd thesis-diffusion-simulation
 
-# 激活虚拟环境
-source python/.venv/bin/activate
-
-# 运行预实验
-bash scripts/run_pilot.sh
+# 一键运行当前正式实验
+bash scripts/run_batch.sh
 ```
 
 **预期输出（示意）**:
@@ -196,7 +197,7 @@ bash scripts/run_pilot.sh
 ✅ 预实验完成！
 ```
 
-### Go 测试 (可选)
+### Go 测试 (可选，单独排查时使用)
 
 ```bash
 cd thesis-simulation/go

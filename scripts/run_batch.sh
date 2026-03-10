@@ -38,12 +38,21 @@ fi
 
 # 实验参数
 GROUPS=("A" "B" "C" "D")
-REPETITIONS=15
-OUTPUT_DIR="data/results"
-RAW_DIR="data/raw"
-LOG_INTERVAL=5
-SUMMARY_FILE="$OUTPUT_DIR/batch_summary.csv"
-REPETITION_WORKERS="${REPETITION_WORKERS:-1}"
+REPETITIONS="${REPETITIONS:-15}"
+SEED_START="${SEED_START:-12001}"
+LOG_INTERVAL="${LOG_INTERVAL:-10}"
+REPETITION_WORKERS="${REPETITION_WORKERS:-4}"
+RUN_RETRIES="${RUN_RETRIES:-2}"
+RETRY_BACKOFF_SECONDS="${RETRY_BACKOFF_SECONDS:-3}"
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-180}"
+LLM_MAX_INFLIGHT="${LLM_MAX_INFLIGHT:-3}"
+LLM_RETRY_MAX_ATTEMPTS="${LLM_RETRY_MAX_ATTEMPTS:-8}"
+LLM_RETRY_BASE_MS="${LLM_RETRY_BASE_MS:-600}"
+LLM_RETRY_JITTER_MS="${LLM_RETRY_JITTER_MS:-300}"
+RUN_TAG="${RUN_TAG:-formal_$(date +%Y%m%d_%H%M%S)}"
+OUTPUT_DIR="${OUTPUT_DIR:-data/results/$RUN_TAG}"
+RAW_DIR="${RAW_DIR:-data/raw/$RUN_TAG}"
+SUMMARY_FILE="${SUMMARY_FILE:-$OUTPUT_DIR/batch_summary.csv}"
 
 # 创建输出目录
 mkdir -p "$OUTPUT_DIR"
@@ -62,7 +71,17 @@ echo "  运行日志：$RUN_LOG"
 echo "  日志间隔：每 ${LOG_INTERVAL} 步"
 echo "  汇总文件：$SUMMARY_FILE"
 echo "  并行 workers：$REPETITION_WORKERS"
+echo "  单次失败重试：$RUN_RETRIES"
+echo "  重试退避起始秒数：$RETRY_BACKOFF_SECONDS"
+echo "  LLM 超时秒数：$TIMEOUT_SECONDS"
+echo "  LLM 最大并发请求：$LLM_MAX_INFLIGHT"
 echo ""
+
+export LLM_MAX_INFLIGHT
+export LLM_RETRY_MAX_ATTEMPTS
+export LLM_RETRY_BASE_MS
+export LLM_RETRY_JITTER_MS
+export LLM_REQUEST_TIMEOUT_SECONDS="$TIMEOUT_SECONDS"
 
 python -c "
 import sys
@@ -79,7 +98,11 @@ python python/run_preflight.py \
     --mode formal_batch \
     --groups "${GROUPS[@]}" \
     --repetitions "$REPETITIONS" \
+    --seed-start "$SEED_START" \
     --repetition-workers "$REPETITION_WORKERS" \
+    --run-retries "$RUN_RETRIES" \
+    --retry-backoff-seconds "$RETRY_BACKOFF_SECONDS" \
+    --timeout-seconds "$TIMEOUT_SECONDS" \
     --log-interval "$LOG_INTERVAL" \
     --output-dir "$OUTPUT_DIR" \
     --raw-dir "$RAW_DIR" \

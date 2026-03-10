@@ -36,7 +36,7 @@
 ## 🏗️ 项目结构
 
 ```
-thesis-simulation/
+thesis-diffusion-simulation/
 ├── python/                     # Python ABM 仿真模块
 │   ├── models/                 # Mesa 模型定义
 │   │   ├── __init__.py
@@ -86,7 +86,7 @@ thesis-simulation/
 
 ```bash
 # 进入 Python 目录
-cd thesis-simulation/python
+cd thesis-diffusion-simulation/python
 
 # 使用 uv (推荐)
 uv venv
@@ -99,25 +99,71 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Go 环境安装 (可选)
+### Go 环境安装
 
 ```bash
 # 安装 Go (macOS)
 brew install go@1.23
 
 # 进入 Go 目录
-cd thesis-simulation/go
+cd thesis-diffusion-simulation/go
 
 # 下载依赖
 go mod download
 go mod tidy
 ```
 
-### 运行仿真
+### API Key 配置
+
+```bash
+cd thesis-diffusion-simulation
+cp .env.example .env
+```
+
+将 `.env` 中的 `LLM_API_KEY` 填写为你的实际密钥。
+
+### 一键运行当前正式实验
+
+Linux / macOS:
+
+```bash
+cd thesis-diffusion-simulation
+bash scripts/run_batch.sh
+```
+
+Windows PowerShell:
+
+```powershell
+cd thesis-diffusion-simulation
+$runTag = "formal_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
+$env:REPETITION_WORKERS="4"
+$env:TIMEOUT_SECONDS="180"
+$env:RUN_RETRIES="2"
+$env:RETRY_BACKOFF_SECONDS="3"
+$env:LLM_MAX_INFLIGHT="3"
+uv run python python/run_preflight.py --mode formal_batch --groups A B C D --repetitions 15 --seed-start 12001 --repetition-workers 4 --run-retries 2 --retry-backoff-seconds 3 --timeout-seconds 180 --log-interval 10 --output-dir "data/results/$runTag" --raw-dir "data/raw/$runTag" --summary-file "data/results/$runTag/batch_summary.csv"
+```
+
+可选环境变量（不设置时使用稳健默认值）:
+
+```bash
+REPETITION_WORKERS=4
+TIMEOUT_SECONDS=180
+RUN_RETRIES=2
+RETRY_BACKOFF_SECONDS=3
+LLM_MAX_INFLIGHT=3
+```
+
+运行完成后，结果默认落在带时间戳目录中：
+- `data/results/formal_时间戳/batch_summary.csv`
+- `data/results/formal_时间戳/metrics_*.json`
+- `data/raw/formal_时间戳/simulation_*.csv`
+
+### 运行单次快速验证（可选）
 
 ```bash
 # Python: 运行预实验 (单组单次)
-cd thesis-simulation/python
+cd thesis-diffusion-simulation/python
 python -c "
 from models import DiffusionModel
 from config.settings import get_config
@@ -133,7 +179,7 @@ print(f'最终采纳率：{metrics[\"final_adoption_rate\"]:.2%}')
 "
 
 # Go: 运行 LLM 智能体测试 (需要配置 API Key)
-cd thesis-simulation/go
+cd thesis-diffusion-simulation/go
 export LLM_API_KEY="your-api-key"
 go run cmd/main.go
 ```
@@ -170,8 +216,11 @@ go run cmd/main.go
 |------|-----|------|
 | N | 100 | 智能体数量 |
 | T | 60 | 仿真步数 |
-| p | 0.01 | 创新系数 (Bass 模型) |
-| q | 0.3 | 模仿系数 (Bass 模型) |
+| p | 0.003 | 创新系数 (Bass 模型，四组一致) |
+| q(强组) | 0.16 | 模仿系数 (A/C) |
+| q(弱组) | 0.09 | 模仿系数 (B/D) |
+| emotion_arousal(强组) | 0.4 | 口碑情绪唤醒度 (A/C) |
+| emotion_arousal(弱组) | 0.15 | 口碑情绪唤醒度 (B/D) |
 | K | 8 | 网络平均度数 |
 | repetitions | 15 | Monte Carlo 重复次数 |
 
@@ -179,9 +228,9 @@ go run cmd/main.go
 
 | 组别 | 网络结构 | 口碑语义 | 预期效果 |
 |------|----------|----------|----------|
-| A | 小世界 | 强情感 | 最强扩散 |
-| B | 小世界 | 弱情感 | 中等扩散 |
-| C | 随机 | 强情感 | 中等扩散 |
+| A | 小世界 | 强情感 | 高扩散 |
+| B | 小世界 | 弱情感 | 中扩散 |
+| C | 随机 | 强情感 | 中扩散 |
 | D | 随机 | 弱情感 | 最弱扩散 |
 
 ---
