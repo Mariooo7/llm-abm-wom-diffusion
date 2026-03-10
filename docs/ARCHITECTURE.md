@@ -1,8 +1,8 @@
 # 项目架构设计文档
 
-**版本**: 0.4.3  
-**日期**: 2026-03-10  
-**技术栈**: Go 1.23 + Eino v0.7.13 + Python 3.11 + Mesa 3.3
+**版本**: 0.6.0  
+**日期**: 2026-03-11  
+**技术栈**: Go 1.23 + Python 3.11 + Mesa 3.3
 
 ---
 
@@ -10,10 +10,11 @@
 
 ### 设计原则
 
-1. **关注点分离**: Python 负责仿真流程与数据分析，Go(Eino)负责统一 LLM 调用
+1. **关注点分离**: Python 负责仿真流程与数据分析，Go 负责统一 LLM 调用网关
 2. **松耦合**: 模块间接口清晰，可独立测试和替换
-3. **性能优先**: 计算密集型用 Go，数据分析用 Python
-4. **研究严谨性**: 采用单一路径决策，LLM 失败即中止并显式报错
+3. **研究语义优先**: 单次仿真保持随机异步更新，不在单步内改为同步并发
+4. **工程优化受约束**: 只做不改变因果解释的优化（如多 repetition 并行调度）
+5. **研究严谨性**: 采用单一路径决策，LLM 失败即中止并显式报错
 
 ### 架构图（目标）
 
@@ -41,8 +42,8 @@
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                     LLM 决策层 (Go/Eino)                      │
-│  - ChatModelAgent 决策                                        │
+│                     LLM 决策层 (Go/HTTP)                       │
+│  - 直连 Chat Completions 决策                                  │
 │  - /decide 统一入口                                            │
 │  - token 统计与返回                                             │
 └──────────────────────────────────────────────────────────────┘
@@ -103,7 +104,7 @@ class DecisionClient:
 
 **职责**:
 - 封装仿真侧决策请求与结果结构
-- 作为调用 Go(Eino) 统一入口的客户端层
+- 作为调用 Go 统一入口的客户端层
 - 统计模型调用与 token 消耗
 - 在模型异常时抛出错误并中止仿真
 
@@ -133,60 +134,15 @@ def compute_network_metrics(G: nx.Graph) -> dict
 
 ## 🦫 Go 模块设计
 
-### go/internal/agents/
-
-**核心类型**:
-```go
-type AgentConfig struct {
-    ID              int
-    Age             int
-    Openness        float64
-    Extraversion    float64
-    RiskTolerance   float64
-    // ...
-}
-
-type SimulationAgent struct {
-    Config  AgentConfig
-    Memory  *AgentMemory
-    Runner  *adk.Runner
-}
-```
-
-**职责**:
-- 智能体画像管理
-- 记忆状态维护
-- LLM 决策服务与工具编排调用
-
-### go/internal/tools/
-
-**核心工具**:
-
-1. **DiffusionTool**: 采纳决策分析
-2. **SentimentTool**: 情感分析
-3. **NetworkTool**: 网络指标计算 (可选)
-
-```go
-type DiffusionTool struct{}
-
-func (t *DiffusionTool) Analyze(
-    ctx context.Context, 
-    input DiffusionInput
-) (*DiffusionOutput, error)
-
-func (t *DiffusionTool) ToTool() (tool.BaseTool, error)
-```
-
 ### go/cmd/
 
 **主程序**:
 ```go
 func main() {
-    // 1. 初始化 LLM
-    // 2. 注册工具
-    // 3. 创建智能体
-    // 4. 运行仿真
-    // 5. 输出结果
+    // 1. 读取配置
+    // 2. 启动 /health 与 /decide
+    // 3. 直连模型接口
+    // 4. 返回决策与 token
 }
 ```
 
@@ -197,28 +153,22 @@ func main() {
 ### 当前实现状态（2026-03-10）
 
 - Python 仿真已接入 `DecisionClient`，并在 `Agent.step` 中触发 LLM 决策。
-- `DecisionClient` 通过 HTTP 调用 Go(Eino) 的 `/decide` 入口，由 Eino 统一执行模型调用。
+- `DecisionClient` 通过 HTTP 调用 Go 的 `/decide` 入口，由 Go 网关直连执行模型调用。
 - 默认启用 `gateway_autostart`，网关未启动时由 Python 自动拉起 Go 决策服务。
 - 失败场景采用 fail-fast：返回错误并中止当前仿真，避免污染实验数据。
+- 已移除前缀缓存补齐相关逻辑，避免额外 token 成本与解释噪声。
 
 ### 唯一通信路径: HTTP API
 
 ```go
 // Go 启动 HTTP 服务
 http.HandleFunc("/decide", handleDecision)
-http.ListenAndServe(":8080", nil)
+http.ListenAndServe("127.0.0.1:18080", nil)
 ```
 
 ```python
-# Python HTTP 调用
-import requests
-
-def call_llm_decision(agent_state: dict) -> dict:
-    response = requests.post(
-        "http://localhost:8080/decide",
-        json=agent_state
-    )
-    return response.json()
+# Python 侧由 DecisionClient 统一调用 /decide
+result = decision_client.decide(req, context_key)
 ```
 
 ---
@@ -239,9 +189,7 @@ def call_llm_decision(agent_state: dict) -> dict:
    4.2 获取邻居状态 (Network)
    4.3 通过 Go `/decide` 执行 LLM 决策
    4.4 更新状态 (Memory)
-   4.5 生成 WOM (LLM/Template)
-   4.6 传播 WOM (Network)
-   4.7 采集数据 (DataCollector)
+   4.5 采集数据 (DataCollector)
    ↓
 5. 输出结果 (CSV/JSON)
    ↓
@@ -289,7 +237,6 @@ LLM_API_KEY=sk-xxx
 LLM_MODEL=qwen3.5-flash
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_TEMPERATURE=0.2
-LLM_MAX_TOKENS=700
 LLM_SEED=42
 
 # 实验配置
@@ -303,24 +250,23 @@ USE_LLM=true
 1. `LLM_TEMPERATURE=0.2`
    - 目标是“可复核”和“跨次运行稳定”，不是创意写作。
    - 较低温度会显著减少答案漂移，便于把差异更多归因到实验条件，而不是采样随机性。
-2. `LLM_MAX_TOKENS=700`
-   - 当前任务是“扩散风险 + 指标建议”的结构化短答，不需要长篇叙述。
-   - 700 的上限可覆盖：结论、机制解释、指标列表、少量工具结果整合。
-   - 该值同时控制单次调用成本与响应时延，减少批量实验中的 token 爆炸风险。
-3. `LLM_SEED=42`
+2. `LLM_SEED=42`
    - 在支持 seed 的模型实现中，能进一步降低同条件下的采样波动，增强复现实验一致性。
-4. `N_REPETITIONS=15`
+3. `N_REPETITIONS=15`
    - 与当前正式实验设计一致（4 组 × 15），总计 60 次。
    - 当参数校准后仍建议保持 15 次作为首轮统计基线，必要时再提升重复次数。
 
-### `LLM_MAX_TOKENS=700` 会不会太少？
+### 研究语义与工程优化边界
 
-- 对当前指令模板与输出格式而言，一般不会太少。
-- 如果出现以下信号，应提高到 900~1200：
-  - 频繁出现截断或未完成结尾；
-  - 工具调用后需要返回较长结构化列表；
-  - 新增多段比较解释（例如跨组机制对照）。
-- 如果只是常规决策解释，维持 700 更有利于成本和吞吐。
+1. 单次仿真语义
+   - 采用随机异步更新：每一步打乱顺序后逐个 Agent 决策。
+   - 不进行“单步内并发同步决策”，避免改变扩散机制解释。
+2. 工程优化策略
+   - 允许并行运行多个 repetition，以缩短总墙钟时间。
+   - 并行调度只作用于实验任务层，不改变单次 run 的决策顺序。
+3. 参数管理原则
+   - 系统运行参数（并发、重试、超时）以稳定为先，非必要不调整。
+   - 研究参数（网络结构、情感强度、Bass 参数）按理论与文献约束校准。
 
 ### YAML 配置
 
@@ -387,41 +333,26 @@ prob = decision.probability
 - 当 API 不可用或解析失败时立即抛错并中止仿真，避免继续产生无效数据。
 - 决策客户端累计 `model_calls/prompt_tokens/completion_tokens/total_tokens`，用于成本统计。
 
-### 3) DiffusionTool.ToTool 为什么是桥接点
-
-代码位置：`go/internal/tools/diffusion_tool.go`
-
-```go
-func (t *DiffusionTool) ToTool() (tool.BaseTool, error) {
-    return utils.InferTool("analyze_diffusion", "分析产品扩散决策，返回采纳概率和原因", t.Analyze)
-}
-```
-
-解读：
-- `Analyze` 是业务逻辑函数，`ToTool` 把它转换成 Eino 可调用工具。
-- 这样 Agent 只需关心“调用哪个工具”，不用关心参数解析和序列化细节。
-- 该封装方式有利于保持 Go 侧决策接口稳定，并支撑统一入口演进。
-
-### 4) 上下文缓存如何工作（阿里百炼前缀缓存 + 会话变量）
+### 3) 上下文缓存如何工作（阿里百炼前缀缓存）
 
 代码位置：`go/cmd/main.go`
 
 ```go
-cache := newPromptCache()
-sessionValues := cache.getOrBuild("pilot_a_context")
-opts := []adk.AgentRunOption{
-    adk.WithSessionValues(sessionValues),
-    adk.WithChatModelOptions(buildModelOptions(cfg)),
+systemContent := []map[string]any{
+    {
+        "type": "text",
+        "text": buildDecisionInstruction(),
+        "cache_control": map[string]any{"type": "ephemeral"},
+    },
 }
 ```
 
 解读：
-- `WithSessionValues` 仍保留为模板变量注入机制，用于研究边界等固定字段复用。
-- 真正的 LLM 前缀缓存由 `buildModelOptions(cfg)` 注入 `WithRequestPayloadModifier` 完成。
-- 在请求发往阿里百炼前，会把 system message 的 `content` 改写为多段结构，并加上 `cache_control: {"type":"ephemeral"}`。
-- 这会触发显式前缀缓存：首次创建缓存，后续同前缀命中缓存并降低输入 token 成本。
+- 系统提示词会在显式缓存模式下改写为 content block，并打上 `cache_control` 标记。
+- 网关对同一固定前缀重复请求时，模型侧会尽量复用缓存，减少重复前缀 token 计费。
+- 通过响应中的 `usage.prompt_tokens_details.cached_tokens` 可观察缓存命中效果。
 
-### 5) Token 消耗统计如何实现
+### 4) Token 消耗统计如何实现
 
 代码位置：`go/cmd/main.go`
 
@@ -432,29 +363,14 @@ type tokenUsageSummary struct {
     completionTokens int
     totalTokens      int
 }
-
-func collectTokenUsage(event *adk.AgentEvent, summary *tokenUsageSummary) {
-    if event == nil || event.Output == nil || event.Output.MessageOutput == nil {
-        return
-    }
-    msg, err := event.Output.MessageOutput.GetMessage()
-    if err != nil || msg == nil || msg.ResponseMeta == nil {
-        return
-    }
-    summary.add(msg.ResponseMeta.Usage)
-}
 ```
 
 解读：
-- Eino 的消息对象会在 `ResponseMeta.Usage` 返回模型侧 token 用量（取决于供应商是否回传）。
-- 运行过程中逐事件累加，得到：
-  - `input_tokens`（prompt tokens）
-  - `output_tokens`（completion tokens）
-  - `total_tokens`
-  - `model_calls`
+- 每次 `/decide` 调用会从响应 `usage` 中提取 prompt/completion/total 并写入统一返回。
+- 网关会额外返回 `cached_tokens`，用于验证前缀缓存是否生效。
 - 程序末尾会打印总量与每次调用平均值，便于你直接估算实验成本。
 
-### 6) 学术化提示词工程如何落地
+### 5) 学术化提示词工程如何落地
 
 代码位置：`go/cmd/main.go`
 

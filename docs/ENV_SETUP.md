@@ -9,7 +9,7 @@
 | 工具 | 版本 | 用途 | 安装命令 |
 |------|------|------|----------|
 | Python | 3.11+ | ABM 仿真 | `brew install python@3.11` |
-| Go | 1.23+ | LLM 智能体 | `brew install go@1.23` |
+| Go | 1.23+ | LLM 决策网关 | `brew install go@1.23` |
 | uv | latest | Python 包管理 | `pip install -U uv` |
 | Git | latest | 版本控制 | `brew install git` |
 
@@ -95,7 +95,7 @@ go mod download
 go mod tidy
 
 # 验证
-go list -m all | grep eino
+go list -m all | head -n 10
 ```
 
 ### 4. 测试编译
@@ -133,8 +133,12 @@ LLM_API_KEY=your-actual-api-key-here
 LLM_MODEL=qwen3.5-flash
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_TEMPERATURE=0.2
-LLM_MAX_TOKENS=700
 LLM_SEED=42
+LLM_ENABLE_THINKING=false
+LLM_RETRY_MAX_ATTEMPTS=3
+LLM_RETRY_BASE_MS=200
+LLM_RETRY_JITTER_MS=120
+LLM_SERVER_ADDR=127.0.0.1:18080
 
 # 实验配置
 EXPERIMENT_GROUP=A
@@ -152,9 +156,7 @@ USE_LLM=true
 ### 5. 参数建议与调优方向
 
 - `LLM_TEMPERATURE=0.2`：偏稳定、低发散，适合学术化表达与复核。
-- `LLM_MAX_TOKENS=700`：对“结论+机制+指标”结构化输出通常足够，控制成本与延迟。
 - `LLM_SEED=42`：在模型支持时降低同条件波动，增强可复现性。
-- 若输出经常被截断，可将 `LLM_MAX_TOKENS` 调高到 `900~1200`。
 
 ---
 
@@ -172,17 +174,17 @@ source python/.venv/bin/activate
 bash scripts/run_pilot.sh
 ```
 
-**预期输出**:
+**预期输出（示意）**:
 ```
 🧪 开始预实验 (Pilot Experiment)
 ✅ Python 虚拟环境已激活
 📊 运行组 A (小世界 + 强情感) - 单次仿真...
 2026-03-02 12:00:00 | INFO | 使用配置：组 A (小世界 + 强情感)
-2026-03-02 12:00:00 | INFO | 模型已创建：200 个智能体，800 条边
-2026-03-02 12:00:05 | INFO | 步数 5: 采纳者 12/200 (6.0%)
-2026-03-02 12:00:10 | INFO | 步数 10: 采纳者 35/200 (17.5%)
-2026-03-02 12:00:15 | INFO | 步数 15: 采纳者 78/200 (39.0%)
-2026-03-02 12:00:20 | INFO | 步数 20: 采纳者 125/200 (62.5%)
+2026-03-02 12:00:00 | INFO | 模型已创建：100 个智能体
+2026-03-02 12:00:05 | INFO | 步数 5: 采纳者 12/100 (12.0%)
+2026-03-02 12:00:10 | INFO | 步数 10: 采纳者 35/100 (35.0%)
+2026-03-02 12:00:15 | INFO | 步数 15: 采纳者 78/100 (78.0%)
+2026-03-02 12:00:20 | INFO | 步数 20: 采纳者 95/100 (95.0%)
 
 📊 预实验结果:
 {

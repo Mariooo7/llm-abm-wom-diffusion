@@ -10,10 +10,7 @@ thesis-diffusion-simulation/
 ├── docs/
 ├── experiments/configs/
 ├── go/
-│   ├── cmd/main.go
-│   └── internal/
-│       ├── agents/agent.go
-│       └── tools/diffusion_tool.go
+│   └── cmd/main.go
 ├── python/
 │   ├── agents/agent.py
 │   ├── config/settings.py
@@ -38,9 +35,9 @@ thesis-diffusion-simulation/
 - Python 配置解析：`python/config/settings.py`
 - Python LLM 决策客户端：`python/llm/decision_client.py`
 - Python 网络生成：`python/networks/generator.py`
-- Go Agent 入口：`go/cmd/main.go`
-- Go Agent 数据结构：`go/internal/agents/agent.go`
-- Go 工具逻辑：`go/internal/tools/diffusion_tool.go`
+- Go 决策网关入口：`go/cmd/main.go`
+- Go 请求/响应结构：`go/cmd/main.go` 中 `decisionRequest/decisionResponse`
+- Go 重试与超时策略：`go/cmd/main.go` 中 `runDecision` 与 `runtimeTimeout`
 - 预实验脚本：`scripts/run_pilot.sh`
 - 批量实验脚本：`scripts/run_batch.sh`
 
@@ -56,7 +53,10 @@ thesis-diffusion-simulation/
 - 统一模型参数：`LLM_PROVIDER=aliyun_bailian`，`LLM_MODEL=qwen3.5-flash`
 - 统一兼容地址：`LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - Python 决策入口：`python/llm/decision_client.py` 的 `DecisionClient.decide`
-- Go 统一调用入口：`go/cmd/main.go` 的 `/decide` 服务模式 (`EINO_MODE=decision_server`)
+- Go 统一调用入口：`go/cmd/main.go` 的 `/decide` 服务模式（`LLM_SERVER_ADDR` 指定监听地址）
+- 研究模式约束：`simulation.use_llm=true` 且 `llm_sampling_ratio=1.0`
+- 语义边界：单次仿真保持随机异步更新，不在单步内做并发同步决策
+- 工程优化边界：允许并行运行多个 repetition，不改变单次 run 的决策顺序
 
 ## 6. 常改文件清单
 - 改实验参数：`experiments/configs/*.yaml`
@@ -66,15 +66,15 @@ thesis-diffusion-simulation/
 - 改网络结构与指标：`python/networks/generator.py`
 - 改配置字段映射：`python/config/settings.py`
 - 改 Python LLM 决策：`python/llm/decision_client.py`
-- 改 LLM 工具策略：`go/internal/tools/diffusion_tool.go`
+- 改 Go 决策网关策略：`go/cmd/main.go`
 - 改项目决策：`../PROJECT_CONTEXT.md`
 
 ## 8. 教学式阅读入口
 - 第一站（总流程）：`python/models/model.py`
 - 第二站（个体决策）：`python/agents/agent.py`
 - 第三站（网络影响）：`python/networks/generator.py`
-- 第四站（LLM 工具桥接）：`go/internal/tools/diffusion_tool.go`
-- 第五站（Agent 装配）：`go/cmd/main.go`
+- 第四站（Go 决策请求与解析）：`go/cmd/main.go`
+- 第五站（Go 重试与容错）：`go/cmd/main.go`
 
 ## 7. 学术依据定位
 - 实验设计：`../04_实验设计/实验设计与分析流程_v1.0.md`

@@ -4,7 +4,7 @@
 
 **英文名称**: LLM-Agent-Based New Product Diffusion Simulation
 
-**技术栈**: Go (Eino) + Python (Mesa) 混合架构
+**技术栈**: Go(HTTP 网关) + Python (Mesa) 混合架构
 
 ---
 
@@ -12,7 +12,7 @@
 
 本项目采用 **Go + Python 混合架构** 进行基于大语言模型 (LLM) 的智能体新产品扩散仿真实验：
 
-- **Go (Eino 框架)**: LLM 智能体决策、口碑内容生成、情感分析
+- **Go (HTTP 网关)**: LLM 决策调用、重试退避、Token 统计
 - **Python (Mesa 框架)**: ABM 仿真主流程、网络生成、数据分析
 - **混合架构优势**: Go 的类型安全 + Python 的科学生态
 
@@ -45,14 +45,9 @@ thesis-simulation/
 │   ├── analysis/               # 数据分析
 │   └── requirements.txt        # Python 依赖
 │
-├── go/                         # Go Eino 智能体模块
+├── go/                         # Go LLM 网关模块
 │   ├── cmd/
-│   │   └── main.go            # 主程序入口
-│   ├── internal/
-│   │   ├── agents/            # 智能体定义
-│   │   │   └── agent.go
-│   │   └── tools/             # LLM 工具
-│   │       └── diffusion_tool.go
+│   │   └── main.go            # /decide HTTP 服务入口
 │   └── go.mod                 # Go 模块配置
 │
 ├── experiments/                # 实验配置与结果
@@ -163,8 +158,7 @@ go run cmd/main.go
 
 | 包 | 版本 | 用途 |
 |----|------|------|
-| github.com/cloudwego/eino | v0.7.13 | LLM 编排框架 |
-| github.com/cloudwego/eino-ext/components/model/openai | v0.1.8 | OpenAI 兼容模型接入 |
+| 标准库 net/http | go1.23 | OpenAI 兼容接口调用与网关服务 |
 
 ---
 
@@ -214,18 +208,24 @@ go run cmd/main.go
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────┐
-│                  智能体决策层 (Go/Eino)                   │
-│  - LLM 调用与编排                                         │
+│                  智能体决策层 (Go/HTTP)                   │
+│  - LLM 调用网关                                           │
 │  - 采纳决策分析                                          │
-│  - 口碑内容生成                                          │
-│  - 情感分析                                              │
+│  - 重试与错误处理                                        │
+│  - token 统计                                            │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ### 通信方式
 
-- **唯一模式**: Python 通过 HTTP 调用 Go(Eino) `/decide` 统一入口
+- **唯一模式**: Python 通过 HTTP 调用 Go `/decide` 统一入口
 - **失败策略**: fail-fast，调用失败立即中止当前仿真并报错
+
+### 研究语义与工程优化边界
+
+- **研究语义不变**: 单次仿真保持随机异步更新，按 agent 顺序逐个决策
+- **工程优化可做**: 允许在调度层并行运行多个 repetition
+- **明确不做**: 不在单步内并发同步决策，避免改变机制解释
 
 ---
 
@@ -239,13 +239,13 @@ go run cmd/main.go
 ### 测试要求
 
 ```bash
-# Python 测试
-cd thesis-simulation/python
-pytest tests/ -v --cov=models
+# Python 静态检查
+uv run ruff check python scripts main.py
+uv run mypy python
 
 # Go 测试
-cd thesis-simulation/go
-go test ./... -v -cover
+cd go
+go test ./...
 ```
 
 ### 提交规范
