@@ -1,12 +1,15 @@
 import argparse
+import csv
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from config.settings import SimulationConfig, get_config
+from llm.decision_client import DecisionClient, DecisionRequest, DecisionTask
 from models import DiffusionModel
 
 
@@ -22,7 +25,11 @@ def load_dotenv_if_exists(project_root: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
-def run_one(config: SimulationConfig, log_interval: int) -> dict[str, Any]:
+def run_one(
+    config: SimulationConfig,
+    log_interval: int,
+    raw_output_path: Path | None = None,
+) -> dict[str, Any]:
     model = DiffusionModel(config)
     interval = max(1, log_interval)
     started_at = time.perf_counter()
@@ -51,6 +58,10 @@ def run_one(config: SimulationConfig, log_interval: int) -> dict[str, Any]:
                 flush=True,
             )
     metrics = model.get_metrics()
+    if raw_output_path is not None:
+        raw_output_path.parent.mkdir(parents=True, exist_ok=True)
+        agent_data = model.datacollector.get_agent_vars_dataframe()
+        agent_data.to_csv(raw_output_path)
     result = {
         "group": config.group,
         "seed": config.seed,
@@ -64,6 +75,7 @@ def run_one(config: SimulationConfig, log_interval: int) -> dict[str, Any]:
         "llm_usage": metrics["llm_usage"],
     }
     total_elapsed = time.perf_counter() - started_at
+    result["elapsed_seconds"] = round(total_elapsed, 2)
     done_line = (
         f"[done] group={config.group} seed={config.seed} "
         f"final_adoption_rate={result['final_adoption_rate']:.4f} "
@@ -72,6 +84,128 @@ def run_one(config: SimulationConfig, log_interval: int) -> dict[str, Any]:
     )
     print(done_line, flush=True)
     return result
+
+
+def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[1]
+    raw_dir = (project_root / args.raw_dir).resolve()
+    results_dir = (project_root / args.output_dir).resolve()
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    summary_path = (project_root / args.summary_file).resolve()
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+
+    tasks: list[tuple[str, int, int]] = []
+    for group in args.groups:
+        for rep in range(1, args.repetitions + 1):
+            seed = args.seed_start + rep - 1
+            tasks.append((group, rep, seed))
+
+    workers = max(1, min(args.repetition_workers, len(tasks)))
+    rows: list[dict[str, Any]] = []
+    failed: list[dict[str, Any]] = []
+
+    def _run_task(group: str, rep: int, seed: int) -> dict[str, Any]:
+        cfg = build_config(group, seed, args.n_agents, args.n_steps, args.timeout_seconds)
+        raw_path = raw_dir / f"simulation_{cfg.group}_{rep}.csv"
+        result = run_one(cfg, args.log_interval, raw_path)
+        model_slug = str(cfg.llm_model).replace("/", "_")
+        metrics_payload = {
+            "group": cfg.group,
+            "rep": rep,
+            "seed": cfg.seed,
+            "config": asdict(cfg),
+            "result": result,
+            "raw_file": str(raw_path),
+        }
+        metrics_path = results_dir / f"metrics_{cfg.group}_{rep}.json"
+        metrics_path.write_text(
+            json.dumps(metrics_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        row = {
+            "group": cfg.group,
+            "rep": rep,
+            "seed": cfg.seed,
+            "n_agents": cfg.n_agents,
+            "n_steps": cfg.n_steps,
+            "model": model_slug,
+            "final_adoption_rate": result["final_adoption_rate"],
+            "total_adopters": result["total_adopters"],
+            "model_calls": result["llm_usage"]["model_calls"],
+            "prompt_tokens": result["llm_usage"]["prompt_tokens"],
+            "completion_tokens": result["llm_usage"]["completion_tokens"],
+            "total_tokens": result["llm_usage"]["total_tokens"],
+            "elapsed_seconds": result["elapsed_seconds"],
+            "raw_file": str(raw_path),
+            "metrics_file": str(metrics_path),
+        }
+        return row
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_task = {
+            pool.submit(_run_task, group, rep, seed): (group, rep, seed)
+            for group, rep, seed in tasks
+        }
+        for future in as_completed(future_to_task):
+            group, rep, seed = future_to_task[future]
+            try:
+                row = future.result()
+                rows.append(row)
+            except Exception as exc:
+                failed.append(
+                    {
+                        "group": group,
+                        "rep": rep,
+                        "seed": seed,
+                        "error": str(exc),
+                    }
+                )
+
+    rows.sort(key=lambda item: (str(item["group"]), int(item["rep"])))
+    fieldnames = [
+        "group",
+        "rep",
+        "seed",
+        "n_agents",
+        "n_steps",
+        "model",
+        "final_adoption_rate",
+        "total_adopters",
+        "model_calls",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "elapsed_seconds",
+        "raw_file",
+        "metrics_file",
+    ]
+    with summary_path.open("w", encoding="utf-8", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    usage_totals = {
+        "model_calls": sum(int(row["model_calls"]) for row in rows),
+        "prompt_tokens": sum(int(row["prompt_tokens"]) for row in rows),
+        "completion_tokens": sum(int(row["completion_tokens"]) for row in rows),
+        "total_tokens": sum(int(row["total_tokens"]) for row in rows),
+    }
+    elapsed_total = sum(float(row["elapsed_seconds"]) for row in rows)
+    return {
+        "mode": "formal_batch",
+        "groups": args.groups,
+        "repetitions": args.repetitions,
+        "seed_start": args.seed_start,
+        "repetition_workers": workers,
+        "total_runs": len(tasks),
+        "success_runs": len(rows),
+        "failed_runs": len(failed),
+        "failures": failed,
+        "summary_file": str(summary_path),
+        "usage_totals": usage_totals,
+        "elapsed_seconds_total": round(elapsed_total, 2),
+    }
 
 
 def build_config(
@@ -135,9 +269,162 @@ def run_calibration(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def run_gateway_benchmark(args: argparse.Namespace) -> dict[str, Any]:
+    cfg = build_config(args.group, args.seed, args.n_agents, args.n_steps, args.timeout_seconds)
+    client = DecisionClient(
+        model=cfg.llm_model,
+        base_url=cfg.llm_base_url,
+        api_key_env=cfg.llm_api_key_env,
+        temperature=cfg.llm_temperature,
+        timeout_seconds=cfg.llm_timeout_seconds,
+        gateway_url=cfg.llm_gateway_url,
+        gateway_autostart=cfg.llm_gateway_autostart,
+    )
+    req = DecisionRequest(
+        agent_id=1,
+        openness=0.62,
+        risk_tolerance=0.41,
+        adopted_ratio=0.35,
+        emotion_arousal=0.58,
+        wom_strength="strong",
+        wom_messages=["message a", "message b", "message c"],
+        innovation_coef=0.01,
+        imitation_coef=0.30,
+    )
+    sequential: list[dict[str, Any]] = []
+    for i in range(args.calls):
+        started = time.perf_counter()
+        _ = client.decide(req, f"bench_seq_{i}")
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        sequential.append({"index": i + 1, "elapsed_ms": round(elapsed_ms, 2)})
+
+    tasks = [
+        DecisionTask(
+            req=DecisionRequest(
+                agent_id=1000 + i,
+                openness=0.62,
+                risk_tolerance=0.41,
+                adopted_ratio=0.35,
+                emotion_arousal=0.58,
+                wom_strength="strong",
+                wom_messages=["message a", "message b", "message c"],
+                innovation_coef=0.01,
+                imitation_coef=0.30,
+            ),
+            context_key=f"bench_con_{i}",
+        )
+        for i in range(args.concurrency)
+    ]
+    started_concurrent = time.perf_counter()
+    concurrent_results = client.decide_many(tasks, concurrency=args.concurrency)
+    concurrent_elapsed_ms = (time.perf_counter() - started_concurrent) * 1000
+    sequential_avg_ms = (
+        sum(item["elapsed_ms"] for item in sequential) / len(sequential) if sequential else 0.0
+    )
+    return {
+        "mode": "gateway_benchmark",
+        "calls": args.calls,
+        "concurrency": args.concurrency,
+        "sequential_avg_ms": round(sequential_avg_ms, 2),
+        "sequential_runs": sequential,
+        "concurrent_total_ms": round(concurrent_elapsed_ms, 2),
+        "concurrent_count": len(concurrent_results),
+        "usage_totals": {
+            "model_calls": client.model_calls,
+            "prompt_tokens": client.prompt_tokens,
+            "completion_tokens": client.completion_tokens,
+            "total_tokens": client.total_tokens,
+        },
+    }
+
+
+def run_concurrency_sweep(args: argparse.Namespace) -> dict[str, Any]:
+    cfg = build_config(args.group, args.seed, args.n_agents, args.n_steps, args.timeout_seconds)
+    client = DecisionClient(
+        model=cfg.llm_model,
+        base_url=cfg.llm_base_url,
+        api_key_env=cfg.llm_api_key_env,
+        temperature=cfg.llm_temperature,
+        timeout_seconds=cfg.llm_timeout_seconds,
+        gateway_url=cfg.llm_gateway_url,
+        gateway_autostart=cfg.llm_gateway_autostart,
+    )
+    levels = list(range(args.concurrency_min, args.concurrency_max + 1, args.concurrency_step))
+    rows: list[dict[str, Any]] = []
+    stable_max = 0
+    for concurrency in levels:
+        task_count = concurrency * args.rounds_per_level
+        started = time.perf_counter()
+        success = 0
+        failed = 0
+        errors: list[str] = []
+        with ThreadPoolExecutor(max_workers=concurrency) as pool:
+            futures = []
+            for i in range(task_count):
+                req = DecisionRequest(
+                    agent_id=10000 + concurrency * 100 + i,
+                    openness=0.62,
+                    risk_tolerance=0.41,
+                    adopted_ratio=0.35,
+                    emotion_arousal=0.58,
+                    wom_strength="strong",
+                    wom_messages=["message a", "message b", "message c"],
+                    innovation_coef=0.01,
+                    imitation_coef=0.30,
+                )
+                futures.append(pool.submit(client.decide, req, f"sweep_c{concurrency}_{i}"))
+            for future in as_completed(futures):
+                try:
+                    _ = future.result()
+                    success += 1
+                except Exception as exc:
+                    failed += 1
+                    if len(errors) < 5:
+                        errors.append(str(exc))
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        row = {
+            "concurrency": concurrency,
+            "task_count": task_count,
+            "success": success,
+            "failed": failed,
+            "elapsed_ms": round(elapsed_ms, 2),
+            "avg_ms_per_task": round(elapsed_ms / task_count, 2) if task_count > 0 else 0.0,
+            "sample_errors": errors,
+        }
+        rows.append(row)
+        if failed == 0:
+            stable_max = concurrency
+    return {
+        "mode": "concurrency_sweep",
+        "group": args.group,
+        "rounds_per_level": args.rounds_per_level,
+        "concurrency_min": args.concurrency_min,
+        "concurrency_max": args.concurrency_max,
+        "concurrency_step": args.concurrency_step,
+        "stable_max_no_failure": stable_max,
+        "levels": rows,
+        "usage_totals": {
+            "model_calls": client.model_calls,
+            "prompt_tokens": client.prompt_tokens,
+            "completion_tokens": client.completion_tokens,
+            "total_tokens": client.total_tokens,
+        },
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=["smoke", "calibration"], required=True)
+    parser.add_argument(
+        "--mode",
+        choices=[
+            "smoke",
+            "calibration",
+            "gateway_benchmark",
+            "concurrency_sweep",
+            "formal_batch",
+        ],
+        required=True,
+    )
     parser.add_argument("--group", default="A")
     parser.add_argument("--groups", nargs="+", default=["A", "B", "C", "D"])
     parser.add_argument("--seed", type=int, default=101)
@@ -147,6 +434,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-steps", type=int, default=None)
     parser.add_argument("--timeout-seconds", type=int, default=90)
     parser.add_argument("--log-interval", type=int, default=5)
+    parser.add_argument("--calls", type=int, default=4)
+    parser.add_argument("--concurrency", type=int, default=10)
+    parser.add_argument("--concurrency-min", type=int, default=5)
+    parser.add_argument("--concurrency-max", type=int, default=40)
+    parser.add_argument("--concurrency-step", type=int, default=5)
+    parser.add_argument("--rounds-per-level", type=int, default=2)
+    parser.add_argument("--repetition-workers", type=int, default=1)
+    parser.add_argument("--output-dir", default="data/results")
+    parser.add_argument("--raw-dir", default="data/raw")
+    parser.add_argument("--summary-file", default="data/results/batch_summary.csv")
     return parser.parse_args()
 
 
@@ -156,8 +453,14 @@ def main() -> None:
     load_dotenv_if_exists(project_root)
     if args.mode == "smoke":
         output = run_smoke(args)
-    else:
+    elif args.mode == "calibration":
         output = run_calibration(args)
+    elif args.mode == "gateway_benchmark":
+        output = run_gateway_benchmark(args)
+    elif args.mode == "formal_batch":
+        output = run_formal_batch(args)
+    else:
+        output = run_concurrency_sweep(args)
     print(json.dumps(output, ensure_ascii=False, indent=2))
 
 

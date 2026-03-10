@@ -43,6 +43,7 @@ OUTPUT_DIR="data/results"
 RAW_DIR="data/raw"
 LOG_INTERVAL=5
 SUMMARY_FILE="$OUTPUT_DIR/batch_summary.csv"
+REPETITION_WORKERS="${REPETITION_WORKERS:-1}"
 
 # 创建输出目录
 mkdir -p "$OUTPUT_DIR"
@@ -60,6 +61,7 @@ echo "  输出目录：$OUTPUT_DIR"
 echo "  运行日志：$RUN_LOG"
 echo "  日志间隔：每 ${LOG_INTERVAL} 步"
 echo "  汇总文件：$SUMMARY_FILE"
+echo "  并行 workers：$REPETITION_WORKERS"
 echo ""
 
 python -c "
@@ -73,83 +75,15 @@ for g in ['A', 'B', 'C', 'D']:
 print('✅ 配置预检查通过: A/B/C/D')
 "
 
-# 运行实验
-for GROUP in "${GROUPS[@]}"; do
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🔬 运行组 $GROUP (${GROUPS[*]})"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    for REP in $(seq 1 $REPETITIONS); do
-        echo "[$GROUP-$REP/$REPETITIONS] 启动..."
-        
-        python -c "
-import sys
-sys.path.insert(0, 'python')
-
-from models import DiffusionModel
-from config.settings import get_config
-import pandas as pd
-from pathlib import Path
-import json
-
-# 加载配置
-config = get_config('$GROUP')
-config.seed = $REP  # 不同 repetition 用不同种子
-
-# 创建模型
-model = DiffusionModel(config)
-log_interval = max(1, int(os.getenv('LOG_INTERVAL', '$LOG_INTERVAL')))
-started_at = time.perf_counter()
-print(f'  ▶ 组{config.group}-第$REP次: n_agents={config.n_agents}, n_steps={config.n_steps}, seed={config.seed}', flush=True)
-
-# 运行仿真
-while model.running:
-    model.step()
-    if model.current_step % log_interval == 0 or not model.running:
-        adopters = sum(1 for a in model.population.values() if a.memory.has_adopted)
-        rate = adopters / config.n_agents
-        elapsed = time.perf_counter() - started_at
-        print(
-            f'    · step {model.current_step}/{config.n_steps} adopters={adopters}/{config.n_agents} ({rate:.1%}) elapsed={elapsed:.1f}s',
-            flush=True,
-        )
-
-# 保存数据
-agent_data = model.datacollector.get_agent_vars_dataframe()
-raw_file = Path('${RAW_DIR}/simulation_${GROUP}_${REP}.csv')
-agent_data.to_csv(raw_file)
-
-# 输出进度
-metrics = model.get_metrics()
-metrics_file = Path('${OUTPUT_DIR}/metrics_${GROUP}_${REP}.json')
-metrics_file.write_text(
-    json.dumps(metrics, ensure_ascii=False, indent=2),
-    encoding='utf-8'
-)
-total_elapsed = time.perf_counter() - started_at
-rep_index = int('$REP')
-summary_path = Path('${SUMMARY_FILE}')
-if not summary_path.exists():
-    summary_path.write_text(
-        'group,rep,seed,n_agents,n_steps,final_adoption_rate,total_adopters,model_calls,prompt_tokens,completion_tokens,total_tokens,elapsed_seconds\n',
-        encoding='utf-8'
-    )
-summary_line = (
-    f\"{config.group},{rep_index},{config.seed},{config.n_agents},{config.n_steps},\"
-    f\"{metrics['final_adoption_rate']:.6f},{metrics['total_adopters']},\"
-    f\"{metrics['llm_usage']['model_calls']},{metrics['llm_usage']['prompt_tokens']},\"
-    f\"{metrics['llm_usage']['completion_tokens']},{metrics['llm_usage']['total_tokens']},\"
-    f\"{total_elapsed:.2f}\n\"
-)
-with summary_path.open('a', encoding='utf-8') as summary_handle:
-    summary_handle.write(summary_line)
-print(f'  ✅ 完成率：{metrics[\"final_adoption_rate\"]:.1%} | raw={raw_file} | metrics={metrics_file} | elapsed={total_elapsed:.1f}s', flush=True)
-"
-    done
-    
-    echo "✅ 组 $GROUP 完成!"
-    echo ""
-done
+python python/run_preflight.py \
+    --mode formal_batch \
+    --groups "${GROUPS[@]}" \
+    --repetitions "$REPETITIONS" \
+    --repetition-workers "$REPETITION_WORKERS" \
+    --log-interval "$LOG_INTERVAL" \
+    --output-dir "$OUTPUT_DIR" \
+    --raw-dir "$RAW_DIR" \
+    --summary-file "$SUMMARY_FILE"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🎉 所有实验完成！"
