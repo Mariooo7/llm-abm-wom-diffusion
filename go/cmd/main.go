@@ -11,11 +11,14 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"regexp"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -153,17 +156,11 @@ func parseBoolOrDefault(raw string, fallback bool) bool {
 func readRuntimeConfig() llmRuntimeConfig {
 	baseURL := getEnvOrDefault("LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
 	retryAttempts := parseIntOrDefault(strings.TrimSpace(os.Getenv("LLM_RETRY_MAX_ATTEMPTS")), 3)
-	if retryAttempts < 1 {
-		retryAttempts = 1
-	}
+	retryAttempts = max(1, retryAttempts)
 	retryBaseMs := parseIntOrDefault(strings.TrimSpace(os.Getenv("LLM_RETRY_BASE_MS")), 200)
-	if retryBaseMs < 50 {
-		retryBaseMs = 50
-	}
+	retryBaseMs = max(50, retryBaseMs)
 	retryJitterMs := parseIntOrDefault(strings.TrimSpace(os.Getenv("LLM_RETRY_JITTER_MS")), 120)
-	if retryJitterMs < 0 {
-		retryJitterMs = 0
-	}
+	retryJitterMs = max(0, retryJitterMs)
 	return llmRuntimeConfig{
 		provider:          getEnvOrDefault("LLM_PROVIDER", "aliyun_bailian"),
 		modelName:         getEnvOrDefault("LLM_MODEL", "qwen3.5-flash"),
@@ -353,10 +350,7 @@ func retryBackoff(attempt int, cfg llmRuntimeConfig) time.Duration {
 		return 0
 	}
 	baseMs := cfg.retryBaseMs
-	step := attempt - 1
-	if step > 5 {
-		step = 5
-	}
+	step := min(attempt-1, 5)
 	delayMs := baseMs * (1 << step)
 	return time.Duration(delayMs)*time.Millisecond + jitterDuration(cfg.retryJitterMs)
 }
@@ -388,8 +382,10 @@ func runDecision(ctx context.Context, client *http.Client, cfg llmRuntimeConfig,
 	}
 	var rawBody []byte
 	maxAttempts := cfg.maxRetryAttempts
+	var httpReq *http.Request
+	var httpResp *http.Response
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		httpReq, err := http.NewRequestWithContext(
+		httpReq, err = http.NewRequestWithContext(
 			ctx,
 			http.MethodPost,
 			buildChatCompletionsURL(cfg.baseURL),
@@ -400,7 +396,7 @@ func runDecision(ctx context.Context, client *http.Client, cfg llmRuntimeConfig,
 		}
 		httpReq.Header.Set("Authorization", "Bearer "+cfg.apiKey)
 		httpReq.Header.Set("Content-Type", "application/json")
-		httpResp, err := client.Do(httpReq)
+		httpResp, err = client.Do(httpReq)
 		if err != nil {
 			if attempt == maxAttempts {
 				return decisionResponse{}, err
@@ -436,8 +432,8 @@ func runDecision(ctx context.Context, client *http.Client, cfg llmRuntimeConfig,
 			} `json:"prompt_tokens_details"`
 		} `json:"usage"`
 	}
-	if err := json.Unmarshal(rawBody, &completionResp); err != nil {
-		return decisionResponse{}, err
+	if unmarshalErr := json.Unmarshal(rawBody, &completionResp); unmarshalErr != nil {
+		return decisionResponse{}, unmarshalErr
 	}
 	usageSummary.add(
 		completionResp.Usage.PromptTokens,
@@ -465,11 +461,10 @@ func runDecision(ctx context.Context, client *http.Client, cfg llmRuntimeConfig,
 }
 
 func runDecisionServer(ctx context.Context, cfg llmRuntimeConfig) error {
+	_ = ctx
 	httpClient := &http.Client{Timeout: runtimeTimeout(cfg)}
 	maxInflight := parseIntOrDefault(strings.TrimSpace(os.Getenv("LLM_MAX_INFLIGHT")), 4)
-	if maxInflight < 1 {
-		maxInflight = 1
-	}
+	maxInflight = max(1, maxInflight)
 	inflight := make(chan struct{}, maxInflight)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -507,6 +502,9 @@ func runDecisionServer(ctx context.Context, cfg llmRuntimeConfig) error {
 	server := &http.Server{
 		Addr:    addr,
 		Handler: mux,
+		BaseContext: func(_ net.Listener) context.Context {
+			return ctx
+		},
 	}
 	fmt.Printf("DecisionServer listening on http://%s\n", addr)
 	fmt.Printf(
@@ -516,11 +514,18 @@ func runDecisionServer(ctx context.Context, cfg llmRuntimeConfig) error {
 		cfg.maxRetryAttempts,
 		maxInflight,
 	)
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
 	return server.ListenAndServe()
 }
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	if err := loadDotEnv("../.env"); err != nil {
 		log.Fatalf("Failed to load .env: %v", err)
 	}
