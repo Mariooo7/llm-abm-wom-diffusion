@@ -253,6 +253,18 @@ go run cmd/main.go
   - 弱组回调：`emotion_arousal 0.10 -> 0.12`，`q 0.08 -> 0.09`
 - 当前判断：强弱组分层已拉开，A 对 C 的结构优势可见，但 A 组仍偏快，正式批次需重点监控 t50 与早期斜率
 
+### 正式规模试跑（2026-03-11）
+
+- 目的：在正式规模（100 agents × 60 steps）下同时验证参数形态与工程稳定性
+- 配置：A/B/C/D，repetitions=2，repetition_workers=4，timeout_seconds=180，run_retries=2
+- 结果（终端汇总）：
+  - 成功 4/8：A×2、C×2，均 `final_adoption_rate=1.0`
+  - 失败 4/8：B×2、D×2，均为 `gateway timeout: timed out`
+  - token 消耗（含失败）：total_tokens=882,440
+- 含义：
+  - 强组在正式规模下仍可能 10~18 步内饱和，最终采纳率存在上限效应风险
+  - 弱组更容易触发超时，正式实验前需先确保 B/D 稳定可跑完
+
 ---
 
 ## 📊 架构设计

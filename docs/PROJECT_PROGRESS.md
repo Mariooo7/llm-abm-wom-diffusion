@@ -44,6 +44,28 @@
   - 提升 `A > C > B > D` 分层出现概率
   - 保持可解释性：网络效应与语义效应同时可见
 
+## 正式规模试跑记录（2026-03-11）
+- 目的：用接近正式实验的规模验证两件事：工程稳定性（并发/超时/重试）与参数形态（是否天花板/贴地）
+- 试跑配置：
+  - 四组齐全：A/B/C/D
+  - 规模：100 agents × 60 steps
+  - 重复次数：repetitions=2（试跑）
+  - 调度：repetition_workers=4，timeout_seconds=180，run_retries=2
+  - 输出：`data/results/formal_try_20260311/batch_summary.csv`
+- 试跑结果（终端汇总）：
+  - 成功：4/8（A×2、C×2），失败：4/8（B×2、D×2）
+  - 失败原因：B/D 均为 `gateway timeout: timed out`（重试后仍失败）
+  - 强组形态：A/C 在 10~18 步内达到 100%（强烈天花板趋势仍存在）
+  - token 消耗（含失败）：total_tokens=882,440，elapsed_seconds_total=1242.95s
+- 数据落盘（成功 run）：
+  - A rep1：final=1.0，model_calls=422，total_tokens=226,694
+  - A rep2：final=1.0，model_calls=424，total_tokens=226,399
+  - C rep1：final=1.0，model_calls=359，total_tokens=191,922
+  - C rep2：final=1.0，model_calls=443，total_tokens=237,425
+- 结论：
+  - 研究侧：当前强组仍偏快，若以最终采纳率为主指标易上限效应；正式实验需把速度类指标列为主输出
+  - 工程侧：弱组更易触发超时风险，必须先解决 B/D 的稳定完成问题，否则全量正式实验将出现缺组/缺重复
+
 ## 正式实验前的最小必做项
 - 明确主因变量口径：最终采纳率之外，加入速度类指标（如 t50、峰值步）
 - 固化正式实验预算：给出 token 与总耗时区间并写入批量运行计划
