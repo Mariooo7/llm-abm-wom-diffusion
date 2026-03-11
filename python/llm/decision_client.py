@@ -1,3 +1,11 @@
+"""
+LLM 决策客户端。
+
+Python 侧不直接对接具体供应商 SDK，而是通过 Go 网关统一转发：
+- 网关负责：系统提示词、重试/超时、供应商兼容层、输出清洗。
+- Python 负责：把当前时间步的个体状态打包成 JSON，发给网关，并汇总 token 用量。
+"""
+
 import json
 import os
 import subprocess
@@ -13,6 +21,11 @@ from urllib import error, request
 
 @dataclass
 class DecisionRequest:
+    """
+    单次决策的输入快照（一个 agent 在一个时间步做一次判断）。
+
+    字段命名与 Go 网关的 decisionRequest 保持一致，避免两边各自“翻译”导致字段漂移。
+    """
     agent_id: int
     openness: float
     risk_tolerance: float
@@ -26,6 +39,7 @@ class DecisionRequest:
 
 @dataclass
 class DecisionResult:
+    """单次决策输出（网关已保证 JSON 结构与概率范围）。"""
     adopt: bool
     probability: float
     reasoning: str
@@ -43,6 +57,14 @@ class DecisionServiceError(RuntimeError):
 
 
 class DecisionClient:
+    """
+    决策入口封装。
+
+    两种工作方式：
+    - gateway_autostart=True：本地未检测到网关时自动 `go run` 拉起（适合脚本一键跑）。
+    - gateway_autostart=False：要求外部先启动网关（适合部署/容器化）。
+    """
+
     def __init__(
         self,
         *,
@@ -79,6 +101,7 @@ class DecisionClient:
         return self.gateway_url.replace("/decide", "/health")
 
     def _gateway_alive(self) -> bool:
+        """探活：用于判断是否需要自动拉起网关。"""
         health_req = request.Request(self._health_url(), method="GET")
         try:
             with request.urlopen(health_req, timeout=self.timeout_seconds) as resp:
@@ -88,6 +111,7 @@ class DecisionClient:
             return False
 
     def _stop_gateway(self) -> None:
+        """退出时清理自动拉起的网关进程与日志句柄。"""
         if self._server_process is None:
             if self._server_log_handle is not None:
                 self._server_log_handle.close()
@@ -100,6 +124,11 @@ class DecisionClient:
             self._server_log_handle = None
 
     def _start_gateway(self) -> None:
+        """
+        自动拉起 Go 网关。
+
+        这里只注入网关运行所需的最小环境变量，避免把 Python 侧的杂项 env 带进来污染实验。
+        """
         go_dir = self._project_root() / "go"
         log_dir = self._project_root() / "data" / "results"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -122,6 +151,7 @@ class DecisionClient:
         register(self._stop_gateway)
 
     def _ensure_gateway(self) -> None:
+        """保证网关可用；不可用时按配置选择自动拉起或直接失败。"""
         if self._gateway_alive():
             return
         if not self.gateway_autostart:
@@ -137,6 +167,11 @@ class DecisionClient:
         raise DecisionServiceError("gateway startup timeout")
 
     def _parse_content(self, content: str) -> DecisionResult:
+        """
+        解析网关响应内容。
+
+        网关端已经做过 JSON 提取与概率 clamp，这里再做一次边界保护，保证上游调用不因脏数据崩溃。
+        """
         data = json.loads(content)
         probability = float(data.get("probability", 0.0))
         probability = max(0.0, min(1.0, probability))
@@ -151,6 +186,11 @@ class DecisionClient:
         )
 
     def _build_payload(self, req: DecisionRequest, context_key: str) -> dict[str, Any]:
+        """
+        构造发送到网关的 payload。
+
+        wom_messages 只取最近 5 条：既贴近“近期口碑”的认知事实，也能控制提示长度与 token 成本。
+        """
         return {
             "agent_id": req.agent_id,
             "openness": round(req.openness, 4),
@@ -165,6 +205,7 @@ class DecisionClient:
         }
 
     def _call_gateway(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """同步调用网关的 /decide 接口，错误统一包装成 DecisionServiceError。"""
         req = request.Request(
             self.gateway_url,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -187,6 +228,7 @@ class DecisionClient:
             raise DecisionServiceError(f"gateway timeout: {exc}") from exc
 
     def decide(self, req: DecisionRequest, context_key: str) -> DecisionResult:
+        """对单个 agent 做一次决策调用，并把 token 统计累积到 client 上。"""
         payload = self._build_payload(req, context_key)
         response = self._call_gateway(payload)
         result = self._parse_content(json.dumps(response, ensure_ascii=False))
@@ -201,6 +243,12 @@ class DecisionClient:
             self.total_tokens += int(response.get("total_tokens", 0) or 0)
 
     def decide_many(self, tasks: list[DecisionTask], concurrency: int = 10) -> list[DecisionResult]:
+        """
+        批量并发决策。
+
+        注意：并发仅用于提升吞吐；语义上每个 task 仍是“某个 agent 在某一步的独立判断”，
+        不在这里引入跨 task 的共享状态。
+        """
         if not tasks:
             return []
         workers = max(1, min(concurrency, len(tasks)))

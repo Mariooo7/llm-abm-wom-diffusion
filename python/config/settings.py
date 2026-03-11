@@ -6,6 +6,14 @@ import yaml
 
 @dataclass
 class SimulationConfig:
+    """
+    单次仿真运行所需的配置快照。
+
+    约定：
+    - 研究参数来自 experiments/configs/group_*.yaml
+    - 工程参数（如 LLM_API_KEY）来自环境变量
+    - 运行期不再“猜测/推断”缺失字段，缺啥就按默认值填充，避免隐式行为
+    """
     group: str
     network_type: str
     n_agents: int
@@ -31,6 +39,16 @@ class SimulationConfig:
 
 
 def get_config(group: str) -> SimulationConfig:
+    """
+    加载指定实验组配置（A/B/C/D）。
+
+    这里同时把“研究语义边界”固化为硬约束：
+    - simulation.use_llm 必须为 true
+    - simulation.llm_sampling_ratio 必须为 1.0
+
+    这样做的目的不是限制扩展，而是防止试跑时悄悄进入“半规则半 LLM”的混合模式，
+    导致不同批次结果不可比。
+    """
     file_name = f"group_{group.lower()}.yaml"
     project_root = Path(__file__).resolve().parents[2]
     config_path = project_root / "experiments" / "configs" / file_name

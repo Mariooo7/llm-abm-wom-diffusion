@@ -44,6 +44,32 @@
   - 提升 `A > C > B > D` 分层出现概率
   - 保持可解释性：网络效应与语义效应同时可见
 
+## 参数与工程优化落实（2026-03-11，晚间）
+- 先做参数与稳定性优化，随后按需求替换 Go 网关系统提示词
+- 四组配置统一调整：
+  - `avg_degree: 8 -> 6`
+  - `llm.timeout_seconds: 120 -> 180`
+- 批量脚本稳态优化（`scripts/run_batch.sh`）：
+  - 默认 `REPETITION_WORKERS: 4 -> 3`
+  - 默认 `TIMEOUT_SECONDS: 180 -> 210`
+  - 新增保护：当 `REPETITION_WORKERS > LLM_MAX_INFLIGHT` 时自动下调，避免调度层过载
+- 预实验脚本一致性优化（`scripts/run_pilot.sh`）：
+  - 与批量脚本对齐，自动加载 `.env`
+  - 启动前检查 `LLM_API_KEY` 与 `go` 可用性，减少“跑到中途才失败”的无效开销
+- 文档同步：
+  - `.env.example` 已补齐批量运行常用覆盖变量
+  - `README.md`、`docs/ENV_SETUP.md` 已同步最新默认值和脚本行为
+
+## 提示词更新落实（2026-03-11，晚间）
+- 已替换 Go 网关系统提示词，核心变化：
+  - 角色改为“有限理性、默认维持现状”的普通消费者
+  - 强化 `openness`、`risk_tolerance`、`innovation_coef`、`imitation_coef`、`adopted_ratio`、`emotion_arousal` 的参数语义解释
+  - 强制输出 JSON 顺序为 `reasoning -> probability -> adopt`
+  - 强制约束：`probability>=0.5` 时 `adopt=true`，其余为 `false`
+  - 禁止 Markdown 与额外文本，保留一到两句第一人称 reasoning
+- 为保证输入与提示词取值范围一致，Python 侧把 `openness/risk_tolerance` 从内部量表分数映射到 `[0,1]` 后再送入网关
+- 目标：在保留可解释文本的前提下，减少“顺从式采纳”，提升机制有效性与学术可解释性
+
 ## 正式规模试跑记录（2026-03-11）
 - 目的：用接近正式实验的规模验证两件事：工程稳定性（并发/超时/重试）与参数形态（是否天花板/贴地）
 - 试跑配置：

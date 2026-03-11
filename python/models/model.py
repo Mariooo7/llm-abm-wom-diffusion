@@ -1,7 +1,9 @@
 """
-Mesa ABM Simulation Model
+扩散仿真核心模型（Mesa ABM）。
 
-This module implements the core simulation model using Mesa framework.
+这套模型的职责很窄：按配置生成网络与个体，按时间步推进，并把每步的采纳状态与汇总指标落盘。
+LLM 只负责“当前时间步是否产生采纳冲动”的一次性判断，不参与跨期规划；工程侧允许并行多个 repetition，
+但单次 run 内仍按随机异步顺序逐个 agent 更新，避免把并发引入到行为语义里。
 """
 
 from typing import Any
@@ -16,10 +18,21 @@ from networks.generator import compute_network_metrics, generate_network
 
 
 class DiffusionModel(Model):
-    """Agent-Based Model for new product diffusion."""
+    """
+    新产品扩散的 ABM（Agent-Based Model）。
+
+    语义边界：
+    - 一个时间步内：随机打乱 agent 更新顺序，逐个更新（异步）。
+    - 跨时间步：只累计状态，不做回溯。
+    - 决策入口：统一走 DecisionClient，保证输入字段与实验提示词对齐。
+    """
 
     def __init__(self, config: SimulationConfig):
-        """Initialize the diffusion model."""
+        """
+        初始化模型：网络 -> 个体 -> 决策服务 -> 数据采集器。
+
+        config 来自 experiments/configs/group_*.yaml，属于“研究参数”的单一事实来源。
+        """
         super().__init__()
 
         self.config = config
@@ -73,14 +86,22 @@ class DiffusionModel(Model):
         )
 
     def _initialize_agents(self) -> None:
-        """Initialize all agents with unique IDs and profiles."""
+        """
+        逐个节点创建 Agent。
+
+        这里把网络节点 ID 作为 agent_id，确保邻接关系与个体索引一一对应，便于复现与排查。
+        """
         for node_id in self.network.nodes():
             profile = AgentProfile(agent_id=node_id)
             agent = Agent(agent_id=node_id, profile=profile, model=self)
             self.population[node_id] = agent
 
     def _compute_cumulative_adoption(self) -> list[int]:
-        """Compute cumulative adoption over time."""
+        """
+        计算“累计采纳曲线”。
+
+        返回长度为 current_step+1 的列表，第 t 项表示在 t 步及之前完成采纳的人数。
+        """
         adoption_times = [
             a.memory.adoption_time
             for a in self.population.values()
@@ -93,16 +114,21 @@ class DiffusionModel(Model):
         return cumulative
 
     def get_neighbors(self, agent_id: int) -> list[int]:
-        """Get neighbor agent IDs."""
+        """返回 agent 的邻居列表（网络结构决定可见同伴集合）。"""
         return list(self.network.neighbors(agent_id))
 
     def get_adopted_neighbors(self, agent_id: int) -> list[int]:
-        """Get adopted neighbor agent IDs."""
+        """返回已采纳邻居列表，用于计算 adopted_ratio。"""
         neighbors = self.get_neighbors(agent_id)
         return [nid for nid in neighbors if self.population[nid].memory.has_adopted]
 
     def step(self) -> None:
-        """Execute one simulation step."""
+        """
+        推进一个时间步。
+
+        Mesa 的 scheduler 并未使用；这里直接在 model 内部做随机异步更新，
+        目的是让“并发”只发生在 repetition 之间，不进入单次 run 的行为语义。
+        """
         agent_ids = list(self.population.keys())
         self.random.shuffle(agent_ids)
         for agent_id in agent_ids:
@@ -115,7 +141,13 @@ class DiffusionModel(Model):
             self.running = False
 
     def get_metrics(self) -> dict[str, Any]:
-        """Get final simulation metrics."""
+        """
+        汇总一次 run 的最终指标。
+
+        该结构会被写入结果文件，用于：
+        - 复现实验：记录关键配置快照与网络结构指标；
+        - 诊断开销：记录 LLM 调用次数与 token 统计。
+        """
         adopters = [a for a in self.population.values() if a.memory.has_adopted]
         adoption_times = [
             a.memory.adoption_time for a in adopters if a.memory.adoption_time is not None

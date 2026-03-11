@@ -50,6 +50,8 @@ thesis-diffusion-simulation/
 ## 5. 当前配置策略
 - 默认 `use_llm: true`，实验配置对齐阿里百炼 Qwen3.5-flash
 - 默认 `n_nodes: 100`，对齐论文目标实验规模
+- 默认 `avg_degree: 6`，用于降低强组过快饱和风险
+- 默认 `llm.timeout_seconds: 180`（组配置）与 `TIMEOUT_SECONDS: 210`（批量脚本）
 - 统一模型参数：`LLM_PROVIDER=aliyun_bailian`，`LLM_MODEL=qwen3.5-flash`
 - 统一兼容地址：`LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - Python 决策入口：`python/llm/decision_client.py` 的 `DecisionClient.decide`
@@ -68,6 +70,13 @@ thesis-diffusion-simulation/
 - 改 Python LLM 决策：`python/llm/decision_client.py`
 - 改 Go 决策网关策略：`go/cmd/main.go`
 - 改项目决策：`../PROJECT_CONTEXT.md`
+
+## 9. 文档职责分工
+- `README.md`：面向使用者的入口文档，给出运行方式和当前默认参数
+- `docs/ENV_SETUP.md`：环境搭建、`.env` 规范与常见问题排查
+- `docs/ARCHITECTURE.md`：研究语义边界与系统分层设计
+- `docs/PROJECT_PROGRESS.md`：阶段决策、参数调整证据与执行记录
+- 本文档 `docs/CODEMAP.md`：代码定位与“改哪里看哪里”的索引
 
 ## 8. 教学式阅读入口
 - 第一站（总流程）：`python/models/model.py`

@@ -40,6 +40,8 @@ type tokenUsageSummary struct {
 	totalTokens      int
 }
 
+// decisionRequest 是 Python 侧每次决策调用的输入快照。
+// 该结构的字段名直接用于 JSON 编解码，属于接口契约：改名会导致上游请求字段“静默丢失”。
 type decisionRequest struct {
 	AgentID        int      `json:"agent_id"`
 	Openness       float64  `json:"openness"`
@@ -53,6 +55,8 @@ type decisionRequest struct {
 	ContextKey     string   `json:"context_key"`
 }
 
+// decisionResponse 是网关对 Python 的返回结构。
+// adopt/probability/reasoning 是研究语义字段；其余是工程统计字段，用于估算开销与排查异常。
 type decisionResponse struct {
 	Adopt            bool    `json:"adopt"`
 	Probability      float64 `json:"probability"`
@@ -72,6 +76,8 @@ func (s *tokenUsageSummary) add(promptTokens int, completionTokens int, totalTok
 	s.totalTokens += totalTokens
 }
 
+// loadDotEnv 只做最朴素的 KEY=VALUE 读取：不支持 export、引号嵌套、变量展开等扩展语法。
+// 目的很简单：让一键脚本跑起来时，用户只需要准备 .env，不必依赖额外工具链。
 func loadDotEnv(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -181,34 +187,47 @@ func runtimeTimeout(cfg llmRuntimeConfig) time.Duration {
 	return time.Duration(timeoutSec) * time.Second
 }
 
+// buildDecisionInstruction 返回系统提示词。
+//
+// 这段字符串是“研究语义”的一部分：它定义了角色边界、输入字段的解释方式以及输出格式。
+// 任何微小改动都可能改变行为分布，因此把它集中在一个函数里，便于审计与记录。
 func buildDecisionInstruction() string {
 	researchProtocol := strings.Join([]string{
-		"研究协议固定前缀：",
-		"1) 研究对象是新产品扩散中的普通消费者个体，不是研究员、顾问或营销文案作者。",
-		"2) 每次仅做单步二元采纳判断，不做跨期策略规划，不引入未给定变量。",
-		"3) 决策依据限定为个体特质、邻里采纳比例、口碑强度与最近口碑内容。",
-		"4) 不允许使用‘我建议企业’‘我认为实验应当’等研究者话语。",
-		"5) 概率含义为当前时间步采纳倾向，不等于长期市场份额预测。",
-		"6) 若信息不足，可在reasoning中说明不确定性，但仍需给出0到1概率。",
-		"7) 不得编造统计显著性、外部样本、真实用户访谈或不存在的历史数据。",
-		"8) 当邻里采纳比例升高时，模仿效应可增强，但需结合风险偏好与开放性。",
-		"9) 当口碑情绪更强时，短期采纳冲动可提升，但并不必然导致采纳。",
-		"10) 口碑消息只使用最近片段，不引用未出现的消息来源。",
-		"11) 输出字段固定 adopt/probability/reasoning，字段名不得增删改。",
-		"12) 禁止输出markdown、代码块、列表符号或任何JSON外文本。",
-		"13) reasoning保持一到两句，聚焦机制，不写修辞。",
-		"14) 概率必须闭区间[0,1]，小数精度可自行控制。",
-		"15) 该前缀用于稳定实验语义边界。",
+		"【角色设定】",
+		"你是一名真实的、具备“有限理性”的普通消费者，面临是否采纳一款“新产品”的决策。",
+		"你遵循人类的创新抗拒逻辑：默认维持现状，仅在内驱力或外部环境刺激足够大时，才会打破惯性做出改变。",
+		"",
+		"【决策参数字典与内心推演机制】",
+		"每次决策，你将收到一个包含当前状态的 JSON。请严格依据以下字段的现实意义进行第一人称推演：",
+		"1. 你的内在特质 (agent_profile)：",
+		"- openness (0.0~1.0): 开放性。0代表极度保守，1代表极度拥抱新事物。",
+		"- risk_tolerance (0.0~1.0): 风险承受度。值越低，你越害怕试错成本，越需要外部的强烈证实才敢购买。",
+		"2. 你的本能基线 (bass_params)：",
+		"- innovation_coef: 创新基线概率（通常极小，如 0.001）。这代表即使没有任何人推荐，你自发产生购买冲动的绝对基准概率。",
+		"- imitation_coef: 模仿敏感度（如 0.10）。这代表你本身有多容易“随大流”。",
+		"3. 你面临的外部刺激 (social_context & wom_messages_recent)：",
+		"- adopted_ratio (0.0~1.0): 朋友圈中已购买该产品的人数比例。0.1代表刚起步，0.5代表已经普及。结合你的 imitation_coef，比例越高你的同侪压力越大。",
+		"- wom_messages_recent: 朋友发给你的真实评价原文。",
+		"- emotion_arousal (0.0~1.0): 朋友在推荐时的情绪唤醒度。0代表冷淡客观，1代表极其狂热。高唤醒度能瞬间提升你的购买冲动，但若你的 risk_tolerance 极低，你依然会保持警惕。",
+		"",
+		"【强制输出规范】",
+		"严禁输出任何Markdown标记（如```json）或多余解释。",
+		"请严格按以下顺序生成合法JSON对象：",
+		"{",
+		`  "reasoning": "结合上述字典中具体参数的数值大小，用一两句第一人称内心独白描述你的权衡过程（必须体现你看到了哪些具体数值及其影响）。",`,
+		`  "probability": 0.0,`,
+		`  "adopt": false`,
+		"}",
+		"当 probability 大于等于0.5时 adopt 必须为 true，否则必须为 false。",
+		"probability 必须是 0.0 到 1.0 的浮点数。",
+		"只输出 JSON 对象本体，不要输出任何额外文本。",
 	}, "\n")
 	return strings.Join([]string{
 		researchProtocol,
-		"你正在模拟一名普通消费者在当前时间步是否采纳新产品。",
-		"你会收到一个JSON对象，包含个体特质、社会影响和口碑信息。",
-		"请仅输出JSON对象，字段必须是 adopt(boolean), probability(number), reasoning(string)。",
-		"不要输出任何额外文本。",
 	}, "\n")
 }
 
+// clampProbability 兜底概率边界，避免上游把非法值写入结果文件。
 func clampProbability(raw float64) float64 {
 	if raw < 0 {
 		return 0
@@ -228,6 +247,10 @@ func extractJSONObject(text string) string {
 	return text[start : end+1]
 }
 
+// parseDecisionText 的目标不是“严格解析”，而是从可能脏的模型输出里尽量捞出可用字段：
+// - 优先尝试完整 JSON 解析；
+// - 失败后使用正则兜底提取 adopt/probability/reasoning；
+// - 最终对 probability 做 clamp，并按阈值规则修正 adopt。
 func parseDecisionText(text string) (decisionResponse, error) {
 	raw := extractJSONObject(text)
 	var payload struct {

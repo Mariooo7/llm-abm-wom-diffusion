@@ -21,6 +21,22 @@ else
     exit 1
 fi
 
+if [ -f ".env" ]; then
+    set -a
+    source .env
+    set +a
+fi
+
+if [ -z "${LLM_API_KEY:-}" ]; then
+    echo "❌ 缺少 LLM_API_KEY，请在 .env 或环境变量中设置"
+    exit 1
+fi
+
+if ! command -v go >/dev/null 2>&1; then
+    echo "❌ 未检测到 go 命令，无法自动拉起决策网关"
+    exit 1
+fi
+
 # 运行预实验 (组 A, 单次)
 echo ""
 echo "📊 运行组 A (小世界 + 强情感) - 单次仿真..."

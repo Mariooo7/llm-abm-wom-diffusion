@@ -136,19 +136,19 @@ Windows PowerShell:
 ```powershell
 cd thesis-diffusion-simulation
 $runTag = "formal_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-$env:REPETITION_WORKERS="4"
-$env:TIMEOUT_SECONDS="180"
+$env:REPETITION_WORKERS="3"
+$env:TIMEOUT_SECONDS="210"
 $env:RUN_RETRIES="2"
 $env:RETRY_BACKOFF_SECONDS="3"
 $env:LLM_MAX_INFLIGHT="3"
-uv run python python/run_preflight.py --mode formal_batch --groups A B C D --repetitions 15 --seed-start 12001 --repetition-workers 4 --run-retries 2 --retry-backoff-seconds 3 --timeout-seconds 180 --log-interval 10 --output-dir "data/results/$runTag" --raw-dir "data/raw/$runTag" --summary-file "data/results/$runTag/batch_summary.csv"
+uv run python python/run_preflight.py --mode formal_batch --groups A B C D --repetitions 15 --seed-start 12001 --repetition-workers 3 --run-retries 2 --retry-backoff-seconds 3 --timeout-seconds 210 --log-interval 10 --output-dir "data/results/$runTag" --raw-dir "data/raw/$runTag" --summary-file "data/results/$runTag/batch_summary.csv"
 ```
 
 可选环境变量（不设置时使用稳健默认值）:
 
 ```bash
-REPETITION_WORKERS=4
-TIMEOUT_SECONDS=180
+REPETITION_WORKERS=3
+TIMEOUT_SECONDS=210
 RUN_RETRIES=2
 RETRY_BACKOFF_SECONDS=3
 LLM_MAX_INFLIGHT=3
@@ -221,7 +221,7 @@ go run cmd/main.go
 | q(弱组) | 0.09 | 模仿系数 (B/D) |
 | emotion_arousal(强组) | 0.20 | 口碑情绪唤醒度 (A/C) |
 | emotion_arousal(弱组) | 0.12 | 口碑情绪唤醒度 (B/D) |
-| K | 8 | 网络平均度数 |
+| K | 6 | 网络平均度数 |
 | repetitions | 15 | Monte Carlo 重复次数 |
 
 ### 实验组
@@ -264,6 +264,14 @@ go run cmd/main.go
 - 含义：
   - 强组在正式规模下仍可能 10~18 步内饱和，最终采纳率存在上限效应风险
   - 弱组更容易触发超时，正式实验前需先确保 B/D 稳定可跑完
+
+### 运行参数更新（2026-03-11）
+
+- 网络平均度：四组统一 `avg_degree: 6`（由 8 下调），用于降低早期扩散过快带来的天花板效应
+- YAML LLM 超时：四组统一 `timeout_seconds: 180`
+- 批量脚本默认：`REPETITION_WORKERS=3`、`TIMEOUT_SECONDS=210`
+- 批量脚本保护：当 `REPETITION_WORKERS > LLM_MAX_INFLIGHT` 时自动下调到 `LLM_MAX_INFLIGHT`
+- 预实验脚本：`scripts/run_pilot.sh` 现已对齐批量脚本，自动加载 `.env` 并检查 `LLM_API_KEY` 与 `go`
 
 ---
 

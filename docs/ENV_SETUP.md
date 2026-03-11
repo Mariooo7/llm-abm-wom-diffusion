@@ -144,10 +144,10 @@ LLM_SERVER_ADDR=127.0.0.1:18080
 
 # 正式实验执行参数（可按需覆盖）
 REPETITIONS=15
-REPETITION_WORKERS=4
+REPETITION_WORKERS=3
 RUN_RETRIES=2
 RETRY_BACKOFF_SECONDS=3
-TIMEOUT_SECONDS=180
+TIMEOUT_SECONDS=210
 ```
 
 ### 4. 获取 API Key
@@ -225,6 +225,18 @@ TokenUsageAvgPerCall => input=552.00 output=486.00 total=1038.00
 ---
 
 ## 🐛 常见问题
+
+### Q0: 为什么本地 `.env` 看起来比 `.env.example` 少变量？
+
+**说明**:
+1. `.env.example` 是模板，包含“完整建议项”；本地 `.env` 只保留“当前需要的覆盖项”也可以运行  
+2. 未在 `.env` 中声明的变量会回退到代码/脚本默认值  
+3. 批量脚本会按“环境变量优先、脚本默认兜底”解析运行参数  
+
+**建议**:
+1. 先从 `.env.example` 复制出 `.env`，最少保留 `LLM_API_KEY`  
+2. 仅把需要改动的参数写入 `.env`，其他交给默认值  
+3. 每次改默认值时，同步更新 `.env.example` 与本文件，避免文档漂移
 
 ### Q1: `uv: command not found`
 

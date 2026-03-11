@@ -7,7 +7,7 @@ description: "小世界网络 + 弱情感口碑"
 network:
   type: "small_world"  # small_world | random
   n_nodes: 100  # 简化：从 200 减少到 100，符合 ABM 标准实践 (Gilbert, 2008; JASSS 2023)
-  avg_degree: 8
+  avg_degree: 6
   rewiring_prob: 0.1
 
 # 口碑语义配置
@@ -36,7 +36,7 @@ llm:
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   api_key_env: "LLM_API_KEY"
   temperature: 0.2
-  timeout_seconds: 120
+  timeout_seconds: 180
   gateway_url: "http://127.0.0.1:18080/decide"
   gateway_autostart: true
 
