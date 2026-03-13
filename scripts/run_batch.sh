@@ -12,18 +12,33 @@ echo "==================================="
 cd "$(dirname "$0")/.."
 
 # 激活 Python 虚拟环境
-if [ -d "python/.venv" ]; then
+if [ -d ".venv" ]; then
+    source .venv/bin/activate
+    echo "✅ Python 虚拟环境已激活 (.venv)"
+elif [ -d "python/.venv" ]; then
     source python/.venv/bin/activate
-    echo "✅ Python 虚拟环境已激活"
+    echo "✅ Python 虚拟环境已激活 (python/.venv)"
 else
     echo "❌ Python 虚拟环境不存在"
     exit 1
 fi
 
 if [ -f ".env" ]; then
-    set -a
-    source .env
-    set +a
+    while IFS='=' read -r key value; do
+        key="$(echo "$key" | xargs)"
+        value="$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | sed 's/^"//;s/"$//')"
+        if [ -z "$key" ]; then
+            continue
+        fi
+        case "$key" in
+            \#*)
+                continue
+                ;;
+        esac
+        if [ -z "${!key+x}" ]; then
+            export "$key=$value"
+        fi
+    done < .env
 fi
 
 if [ -z "${LLM_API_KEY:-}" ]; then
@@ -37,9 +52,11 @@ if ! command -v go >/dev/null 2>&1; then
 fi
 
 # 实验参数
-GROUPS=("A" "B" "C" "D")
+EXP_GROUPS=("A" "B" "C" "D")
 REPETITIONS="${REPETITIONS:-15}"
 SEED_START="${SEED_START:-12001}"
+N_AGENTS="${N_AGENTS:-100}"
+N_STEPS="${N_STEPS:-60}"
 LOG_INTERVAL="${LOG_INTERVAL:-10}"
 REPETITION_WORKERS="${REPETITION_WORKERS:-3}"
 RUN_RETRIES="${RUN_RETRIES:-2}"
@@ -54,8 +71,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-data/results/$RUN_TAG}"
 RAW_DIR="${RAW_DIR:-data/raw/$RUN_TAG}"
 SUMMARY_FILE="${SUMMARY_FILE:-$OUTPUT_DIR/batch_summary.csv}"
 if [ "$REPETITION_WORKERS" -gt "$LLM_MAX_INFLIGHT" ]; then
-    echo "⚠️ REPETITION_WORKERS=$REPETITION_WORKERS 高于 LLM_MAX_INFLIGHT=$LLM_MAX_INFLIGHT，已自动下调为 $LLM_MAX_INFLIGHT"
-    REPETITION_WORKERS="$LLM_MAX_INFLIGHT"
+    echo "⚠️ REPETITION_WORKERS=${REPETITION_WORKERS} 高于 LLM_MAX_INFLIGHT=${LLM_MAX_INFLIGHT}，已自动下调为 ${LLM_MAX_INFLIGHT}"
+    REPETITION_WORKERS="${LLM_MAX_INFLIGHT}"
 fi
 
 # 创建输出目录
@@ -67,9 +84,11 @@ exec > >(tee -a "$RUN_LOG") 2>&1
 
 echo ""
 echo "📋 实验参数:"
-echo "  实验组：${GROUPS[*]}"
+echo "  实验组：${EXP_GROUPS[*]}"
 echo "  重复次数：$REPETITIONS"
-echo "  总实验数：$((${#GROUPS[@]} * $REPETITIONS))"
+echo "  Agent 数：$N_AGENTS"
+echo "  步数：$N_STEPS"
+echo "  总实验数：$((${#EXP_GROUPS[@]} * $REPETITIONS))"
 echo "  输出目录：$OUTPUT_DIR"
 echo "  运行日志：$RUN_LOG"
 echo "  日志间隔：每 ${LOG_INTERVAL} 步"
@@ -100,9 +119,11 @@ print('✅ 配置预检查通过: A/B/C/D')
 
 python python/run_preflight.py \
     --mode formal_batch \
-    --groups "${GROUPS[@]}" \
+    --groups "${EXP_GROUPS[@]}" \
     --repetitions "$REPETITIONS" \
     --seed-start "$SEED_START" \
+    --n-agents "$N_AGENTS" \
+    --n-steps "$N_STEPS" \
     --repetition-workers "$REPETITION_WORKERS" \
     --run-retries "$RUN_RETRIES" \
     --retry-backoff-seconds "$RETRY_BACKOFF_SECONDS" \

@@ -51,6 +51,7 @@ thesis-diffusion-simulation/
 - 默认 `use_llm: true`，实验配置对齐阿里百炼 Qwen3.5-flash
 - 默认 `n_nodes: 100`，对齐论文目标实验规模
 - 默认 `avg_degree: 6`，用于降低强组过快饱和风险
+- 默认 `p=0.002`（四组统一），`q=0.08` (A/C) / `0.06` (B/D)，并启用 `round(N*p)` 初始创新者机制
 - 默认 `llm.timeout_seconds: 180`（组配置）与 `TIMEOUT_SECONDS: 210`（批量脚本）
 - 统一模型参数：`LLM_PROVIDER=aliyun_bailian`，`LLM_MODEL=qwen3.5-flash`
 - 统一兼容地址：`LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`

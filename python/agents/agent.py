@@ -36,6 +36,11 @@ class AgentMemory:
     has_adopted: bool = False
     adoption_time: int | None = None
     wom_received: list[str] = field(default_factory=list)
+    last_decision_probability: float = 0.0
+    last_decision_adopt: bool = False
+    last_decision_reasoning: str = ""
+    last_decision_source: str = ""
+    last_decision_final_adopt: bool = False
 
 
 class Agent:
@@ -53,6 +58,11 @@ class Agent:
         LLM 提示词明确按 0~1 解释 openness/risk_tolerance，输入侧必须对齐，否则模型会把量纲误读。
         """
         return float(np.clip((raw - 2.0) / 7.0, 0.0, 1.0))
+
+    def sharing_probability(self) -> float:
+        base = self._normalize_trait(self.profile.sharing_tendency)
+        scaled = base * self.model.config.wom_share_multiplier
+        return float(np.clip(scaled, 0.0, 1.0))
 
     def step(self) -> None:
         if self.memory.has_adopted:
@@ -75,6 +85,30 @@ class Agent:
         )
         decision = self.model.decision_client.decide(req, self.model.context_key)
         prob = decision.probability
-        if self.model.random.random() < prob:
+        self.memory.last_decision_probability = prob
+        self.memory.last_decision_adopt = decision.adopt
+        self.memory.last_decision_reasoning = decision.reasoning
+        self.memory.last_decision_source = decision.source
+        self.memory.last_decision_final_adopt = bool(decision.adopt)
+        self.model.record_decision(
+            {
+                "step": self.model.current_step,
+                "agent_id": self.unique_id,
+                "openness": round(openness, 4),
+                "risk_tolerance": round(risk_tolerance, 4),
+                "adopted_ratio": round(adopted_ratio, 4),
+                "emotion_arousal": round(self.model.config.emotion_arousal, 4),
+                "innovation_coef": round(self.model.config.innovation_coef, 4),
+                "imitation_coef": round(self.model.config.imitation_coef, 4),
+                "wom_bucket": self.model.wom_bucket,
+                "wom_count": len(self.memory.wom_received),
+                "probability": round(prob, 6),
+                "adopt_by_threshold": bool(decision.adopt),
+                "adopt_final": bool(decision.adopt),
+                "reasoning": decision.reasoning,
+                "source": decision.source,
+            }
+        )
+        if decision.adopt:
             self.memory.has_adopted = True
             self.memory.adoption_time = self.model.current_step

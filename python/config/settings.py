@@ -21,6 +21,9 @@ class SimulationConfig:
     rewiring_prob: float
     wom_strength: str
     emotion_arousal: float
+    wom_corpus_path: str
+    wom_memory_limit: int
+    wom_share_multiplier: float
     innovation_coef: float
     imitation_coef: float
     n_steps: int
@@ -75,6 +78,9 @@ def get_config(group: str) -> SimulationConfig:
         rewiring_prob=float(network.get("rewiring_prob", 0.1)),
         wom_strength=wom.get("strength", "strong"),
         emotion_arousal=float(wom.get("emotion_arousal", 0.5)),
+        wom_corpus_path=str(wom.get("corpus_path", "data/wom/wom_corpus.csv")),
+        wom_memory_limit=int(wom.get("memory_limit", 5)),
+        wom_share_multiplier=float(wom.get("share_multiplier", 1.0)),
         innovation_coef=float(bass.get("innovation_coef", 0.01)),
         imitation_coef=float(bass.get("imitation_coef", 0.3)),
         n_steps=int(simulation.get("n_steps", 60)),

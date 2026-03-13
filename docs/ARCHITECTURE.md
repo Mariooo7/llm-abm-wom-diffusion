@@ -1,7 +1,7 @@
 # 项目架构设计文档
 
-**版本**: 0.6.0  
-**日期**: 2026-03-11  
+**版本**: 0.6.1  
+**日期**: 2026-03-13  
 **技术栈**: Go 1.23 + Python 3.11 + Mesa 3.3
 
 ---
@@ -34,7 +34,7 @@
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │              DiffusionModel (Mesa)                   │    │
 │  │  - 网络生成 (NetworkX)                               │    │
-│  │  - 智能体调度 (Scheduler)                            │    │
+│  │  - 随机异步激活 (Model 内部调度)                     │    │
 │  │  - 数据采集 (DataCollector)                          │    │
 │  └─────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────┘
@@ -185,7 +185,8 @@ result = decision_client.decide(req, context_key)
 3. 初始化智能体 (Agent)
    ↓
 4. For each step:
-   4.1 激活智能体 (Scheduler)
+   4.0 若有已采纳者，先执行 WOM 传播（按分享倾向广播离线语料）
+   4.1 激活智能体（随机异步顺序）
    4.2 获取邻居状态 (Network)
    4.3 通过 Go `/decide` 执行 LLM 决策
    4.4 更新状态 (Memory)
@@ -200,10 +201,10 @@ result = decision_client.decide(req, context_key)
 
 **原始数据** (`data/raw/simulation_{group}_{rep}.csv`):
 ```csv
-step,agent_id,has_adopted,adoption_time,wom_count,neighbor_adopted_ratio
-0,0,False,,0,0.0
-0,1,False,,0,0.0
-1,0,True,1,2,0.15
+step,agent_id,openness,risk_tolerance,adopted_ratio,emotion_arousal,innovation_coef,imitation_coef,wom_bucket,wom_count,probability,adopt_by_threshold,adopt_final,reasoning,source
+0,0,0.51,0.42,0.0,0.2,0.002,0.08,strong_low,0,0.134,false,false,"当前风险感知偏高，先观望",llm_http_direct
+0,1,0.63,0.56,0.17,0.2,0.002,0.08,strong_low,1,0.542,true,true,"邻居已有采纳，且我可接受风险，倾向尝试",llm_http_direct
+1,0,0.51,0.42,0.17,0.2,0.002,0.08,strong_low,2,0.486,false,false,"仍低于阈值，继续等待",llm_http_direct
 ...
 ```
 

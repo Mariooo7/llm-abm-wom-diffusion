@@ -15,11 +15,14 @@ wom:
   strength: "weak"  # strong | weak
   emotion_arousal: 0.12  # 0-1
   valence: "positive"
+  corpus_path: "data/wom/wom_corpus.csv"
+  memory_limit: 5
+  share_multiplier: 1.0
 
 # Bass 模型参数
 bass:
-  innovation_coef: 0.001  # p
-  imitation_coef: 0.09    # q
+  innovation_coef: 0.002  # p
+  imitation_coef: 0.06    # q
 
 # 仿真配置
 simulation:

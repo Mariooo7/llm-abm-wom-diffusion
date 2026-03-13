@@ -60,8 +60,12 @@ def run_one(
     metrics = model.get_metrics()
     if raw_output_path is not None:
         raw_output_path.parent.mkdir(parents=True, exist_ok=True)
-        agent_data = model.datacollector.get_agent_vars_dataframe()
-        agent_data.to_csv(raw_output_path)
+        trace_rows = model.get_decision_trace()
+        with raw_output_path.open("w", encoding="utf-8", newline="") as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=DiffusionModel.decision_trace_fields)
+            writer.writeheader()
+            if trace_rows:
+                writer.writerows(trace_rows)
     result = {
         "group": config.group,
         "seed": config.seed,
@@ -69,9 +73,12 @@ def run_one(
         "n_steps": config.n_steps,
         "network_type": config.network_type,
         "wom_strength": config.wom_strength,
+        "wom_bucket": metrics["config"]["wom_bucket"],
         "final_adoption_rate": metrics["final_adoption_rate"],
         "total_adopters": metrics["total_adopters"],
         "avg_adoption_time": metrics["avg_adoption_time"],
+        "wom_usage": metrics["wom_usage"],
+        "bootstrap_usage": metrics.get("bootstrap_usage", {"initial_innovators": 0}),
         "llm_usage": metrics["llm_usage"],
     }
     total_elapsed = time.perf_counter() - started_at
