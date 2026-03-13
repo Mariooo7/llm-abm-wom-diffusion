@@ -40,6 +40,7 @@ thesis-diffusion-simulation/
 - Go 重试与超时策略：`go/cmd/main.go` 中 `runDecision` 与 `runtimeTimeout`
 - 预实验脚本：`scripts/run_pilot.sh`
 - 批量实验脚本：`scripts/run_batch.sh`
+- 批量实验执行入口：`python/run_preflight.py`（`formal_batch` 支持实时看板）
 
 ## 4. 关键配置定位
 - 实验组配置：`experiments/configs/group_a.yaml` ~ `group_d.yaml`
@@ -63,6 +64,7 @@ thesis-diffusion-simulation/
 ## 6. 常改文件清单
 - 改实验参数：`experiments/configs/*.yaml`
 - 改运行行为：`scripts/run_pilot.sh`, `scripts/run_batch.sh`
+- 改批量看板与重试状态刷新：`python/run_preflight.py`
 - 改仿真逻辑：`python/models/model.py`
 - 改个体决策规则：`python/agents/agent.py`
 - 改网络结构与指标：`python/networks/generator.py`

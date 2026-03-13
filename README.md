@@ -160,6 +160,11 @@ LLM_MAX_INFLIGHT=50
 - `data/results/formal_时间戳/metrics_*.json`
 - `data/raw/formal_时间戳/simulation_*.csv`
 
+`formal_batch` 运行中会每秒刷新终端看板，实时显示总览与分组进度：
+- 总览：`queued / running / retrying / done / failed`
+- 分组：每组完成数、步数进度条、活跃任务数与失败数
+- 活跃任务：最多显示 4 条，包含 `group/rep/seed/step/rate/try`
+
 ### 运行单次快速验证（可选）
 
 ```bash

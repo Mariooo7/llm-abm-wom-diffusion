@@ -2,7 +2,9 @@ import argparse
 import csv
 import json
 import os
+import threading
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
 from pathlib import Path
@@ -25,38 +27,159 @@ def load_dotenv_if_exists(project_root: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip())
 
 
+def _format_bar(current: int, total: int, width: int = 12) -> str:
+    safe_total = max(1, total)
+    ratio = max(0.0, min(1.0, current / safe_total))
+    filled = int(round(ratio * width))
+    return "█" * filled + "·" * (width - filled)
+
+
+def _render_formal_batch_board(
+    states: dict[str, dict[str, Any]],
+    groups: list[str],
+    total_runs: int,
+    started_at: float,
+) -> str:
+    counts = {"queued": 0, "running": 0, "retrying": 0, "done": 0, "failed": 0}
+    for item in states.values():
+        status = str(item.get("status", "queued"))
+        if status in counts:
+            counts[status] += 1
+        else:
+            counts["queued"] += 1
+    elapsed = time.perf_counter() - started_at
+    lines = [
+        (
+            f"[board] elapsed={elapsed:.1f}s total={total_runs} "
+            f"queued={counts['queued']} running={counts['running']} "
+            f"retrying={counts['retrying']} done={counts['done']} failed={counts['failed']}"
+        )
+    ]
+    group_parts: list[str] = []
+    for group in groups:
+        per_group = [v for v in states.values() if str(v.get("group")) == group]
+        group_total = len(per_group)
+        done_count = sum(1 for v in per_group if str(v.get("status")) == "done")
+        fail_count = sum(1 for v in per_group if str(v.get("status")) == "failed")
+        active = sum(
+            1
+            for v in per_group
+            if str(v.get("status")) in {"running", "retrying", "starting"}
+        )
+        max_step = max((int(v.get("step", 0)) for v in per_group), default=0)
+        n_steps = max((int(v.get("n_steps", 0)) for v in per_group), default=0)
+        bar = _format_bar(max_step, n_steps if n_steps > 0 else 1)
+        summary = (
+            f"{group} {done_count}/{group_total} {bar} "
+            f"s={max_step}/{n_steps} a={active} f={fail_count}"
+        )
+        group_parts.append(
+            summary
+        )
+    lines.append("[groups] " + " | ".join(group_parts))
+    active_rows = [
+        v
+        for v in states.values()
+        if str(v.get("status")) in {"running", "retrying", "starting"}
+    ]
+    active_rows.sort(
+        key=lambda item: (
+            str(item.get("status")),
+            str(item.get("group")),
+            int(item.get("rep", 0)),
+        )
+    )
+    if active_rows:
+        focus = active_rows[:4]
+        focus_parts = []
+        for item in focus:
+            status = str(item.get("status"))
+            group = str(item.get("group"))
+            rep = int(item.get("rep", 0))
+            seed = int(item.get("seed", 0))
+            step = int(item.get("step", 0))
+            n_steps = int(item.get("n_steps", 0))
+            rate = float(item.get("rate", 0.0))
+            attempt = int(item.get("attempt", 1))
+            detail = (
+                f"{group}-r{rep}-s{seed} {status} "
+                f"step={step}/{n_steps} rate={rate:.3f} try={attempt}"
+            )
+            focus_parts.append(
+                detail
+            )
+        lines.append("[active] " + " | ".join(focus_parts))
+    return "\n".join(lines)
+
+
 def run_one(
     config: SimulationConfig,
     log_interval: int,
     raw_output_path: Path | None = None,
+    progress_hook: Callable[[dict[str, Any]], None] | None = None,
+    emit_logs: bool = True,
+    rep: int | None = None,
 ) -> dict[str, Any]:
     model = DiffusionModel(config)
     interval = max(1, log_interval)
     started_at = time.perf_counter()
+    rep_prefix = f" rep={rep}" if rep is not None else ""
     run_header = (
-        f"[run] group={config.group} seed={config.seed} "
+        f"[run] group={config.group}{rep_prefix} seed={config.seed} "
         f"n_agents={config.n_agents} n_steps={config.n_steps}"
     )
-    print(
-        run_header,
-        flush=True,
-    )
+    if emit_logs:
+        print(
+            run_header,
+            flush=True,
+        )
+    if progress_hook is not None:
+        progress_hook(
+            {
+                "event": "run_start",
+                "group": config.group,
+                "rep": rep,
+                "seed": config.seed,
+                "step": 0,
+                "n_steps": config.n_steps,
+                "adopters": 0,
+                "n_agents": config.n_agents,
+                "rate": 0.0,
+                "elapsed": 0.0,
+            }
+        )
     while model.running:
         model.step()
+        adopters = sum(1 for a in model.population.values() if a.memory.has_adopted)
+        rate = adopters / config.n_agents
+        elapsed = time.perf_counter() - started_at
+        if progress_hook is not None:
+            progress_hook(
+                {
+                    "event": "run_progress",
+                    "group": config.group,
+                    "rep": rep,
+                    "seed": config.seed,
+                    "step": model.current_step,
+                    "n_steps": config.n_steps,
+                    "adopters": adopters,
+                    "n_agents": config.n_agents,
+                    "rate": rate,
+                    "elapsed": elapsed,
+                }
+            )
         if model.current_step % interval == 0 or not model.running:
-            adopters = sum(1 for a in model.population.values() if a.memory.has_adopted)
-            rate = adopters / config.n_agents
-            elapsed = time.perf_counter() - started_at
             progress_line = (
-                f"[progress] group={config.group} seed={config.seed} "
+                f"[progress] group={config.group}{rep_prefix} seed={config.seed} "
                 f"step={model.current_step}/{config.n_steps} "
                 f"adopters={adopters}/{config.n_agents} rate={rate:.4f} "
                 f"elapsed={elapsed:.1f}s"
             )
-            print(
-                progress_line,
-                flush=True,
-            )
+            if emit_logs:
+                print(
+                    progress_line,
+                    flush=True,
+                )
     metrics = model.get_metrics()
     if raw_output_path is not None:
         raw_output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,12 +207,29 @@ def run_one(
     total_elapsed = time.perf_counter() - started_at
     result["elapsed_seconds"] = round(total_elapsed, 2)
     done_line = (
-        f"[done] group={config.group} seed={config.seed} "
+        f"[done] group={config.group}{rep_prefix} seed={config.seed} "
         f"final_adoption_rate={result['final_adoption_rate']:.4f} "
         f"model_calls={result['llm_usage']['model_calls']} "
         f"elapsed={total_elapsed:.1f}s"
     )
-    print(done_line, flush=True)
+    if emit_logs:
+        print(done_line, flush=True)
+    if progress_hook is not None:
+        progress_hook(
+            {
+                "event": "run_done",
+                "group": config.group,
+                "rep": rep,
+                "seed": config.seed,
+                "step": config.n_steps,
+                "n_steps": config.n_steps,
+                "adopters": result["total_adopters"],
+                "n_agents": config.n_agents,
+                "rate": result["final_adoption_rate"],
+                "elapsed": total_elapsed,
+                "model_calls": result["llm_usage"]["model_calls"],
+            }
+        )
     return result
 
 
@@ -111,6 +251,26 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
     workers = max(1, min(args.repetition_workers, len(tasks)))
     rows: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
+    state_lock = threading.Lock()
+    started_at = time.perf_counter()
+    task_states: dict[str, dict[str, Any]] = {}
+    for group, rep, seed in tasks:
+        key = f"{group}:{rep}:{seed}"
+        task_states[key] = {
+            "key": key,
+            "group": group,
+            "rep": rep,
+            "seed": seed,
+            "status": "queued",
+            "attempt": 0,
+            "step": 0,
+            "n_steps": int(args.n_steps or 0),
+            "adopters": 0,
+            "n_agents": int(args.n_agents or 0),
+            "rate": 0.0,
+            "elapsed": 0.0,
+            "error": "",
+        }
 
     def _is_retriable_error_message(message: str) -> bool:
         msg = message.lower()
@@ -140,11 +300,35 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
         run_retries = cast(int, args.run_retries)
         attempts_total = max(1, run_retries + 1)
         last_exc: Exception | None = None
+        key = f"{group}:{rep}:{seed}"
         for attempt in range(attempts_total):
+            with state_lock:
+                current = task_states[key]
+                current["status"] = "starting" if attempt == 0 else "retrying"
+                current["attempt"] = attempt + 1
+                current["error"] = ""
+
+            def _on_progress(event: dict[str, Any]) -> None:
+                with state_lock:
+                    current = task_states[key]
+                    current["status"] = "running"
+                    current["step"] = int(event.get("step", current["step"]))
+                    current["n_steps"] = int(event.get("n_steps", current["n_steps"]))
+                    current["adopters"] = int(event.get("adopters", current["adopters"]))
+                    current["n_agents"] = int(event.get("n_agents", current["n_agents"]))
+                    current["rate"] = float(event.get("rate", current["rate"]))
+                    current["elapsed"] = float(event.get("elapsed", current["elapsed"]))
             try:
                 cfg = build_config(group, seed, args.n_agents, args.n_steps, args.timeout_seconds)
                 raw_path = raw_dir / f"simulation_{cfg.group}_{rep}.csv"
-                result = run_one(cfg, args.log_interval, raw_path)
+                result = run_one(
+                    cfg,
+                    args.log_interval,
+                    raw_path,
+                    progress_hook=_on_progress,
+                    emit_logs=False,
+                    rep=rep,
+                )
                 model_slug = str(cfg.llm_model).replace("/", "_")
                 metrics_payload = {
                     "group": cfg.group,
@@ -178,11 +362,23 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     "metrics_file": str(metrics_path),
                     "attempt": attempt + 1,
                 }
+                with state_lock:
+                    current = task_states[key]
+                    current["status"] = "done"
+                    current["step"] = int(cfg.n_steps)
+                    current["n_steps"] = int(cfg.n_steps)
+                    current["adopters"] = int(result["total_adopters"])
+                    current["n_agents"] = int(cfg.n_agents)
+                    current["rate"] = float(result["final_adoption_rate"])
+                    current["elapsed"] = float(result["elapsed_seconds"])
                 return row
             except Exception as exc:
                 last_exc = exc
                 message = str(exc)
                 retriable = _is_retriable_error_message(message)
+                with state_lock:
+                    current = task_states[key]
+                    current["error"] = message
                 if attempt >= attempts_total - 1 or not retriable:
                     raise
                 sleep_seconds = _retry_sleep_seconds(attempt)
@@ -190,25 +386,82 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     time.sleep(sleep_seconds)
         raise RuntimeError(str(last_exc) if last_exc is not None else "unknown error")
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        future_to_task = {
-            pool.submit(_run_task, group, rep, seed): (group, rep, seed)
-            for group, rep, seed in tasks
-        }
-        for future in as_completed(future_to_task):
-            group, rep, seed = future_to_task[future]
-            try:
-                row = future.result()
-                rows.append(row)
-            except Exception as exc:
-                failed.append(
-                    {
-                        "group": group,
-                        "rep": rep,
-                        "seed": seed,
-                        "error": str(exc),
+    stop_event = threading.Event()
+
+    def _render_loop() -> None:
+        while not stop_event.is_set():
+            with state_lock:
+                snapshot = {
+                    key: {
+                        "group": value["group"],
+                        "rep": value["rep"],
+                        "seed": value["seed"],
+                        "status": value["status"],
+                        "attempt": value["attempt"],
+                        "step": value["step"],
+                        "n_steps": value["n_steps"],
+                        "adopters": value["adopters"],
+                        "n_agents": value["n_agents"],
+                        "rate": value["rate"],
                     }
-                )
+                    for key, value in task_states.items()
+                }
+            print(
+                _render_formal_batch_board(snapshot, list(args.groups), len(tasks), started_at),
+                flush=True,
+            )
+            stop_event.wait(1.0)
+
+    renderer = threading.Thread(target=_render_loop, daemon=True)
+    renderer.start()
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_to_task = {
+                pool.submit(_run_task, group, rep, seed): (group, rep, seed)
+                for group, rep, seed in tasks
+            }
+            for future in as_completed(future_to_task):
+                group, rep, seed = future_to_task[future]
+                key = f"{group}:{rep}:{seed}"
+                try:
+                    row = future.result()
+                    rows.append(row)
+                except Exception as exc:
+                    with state_lock:
+                        current = task_states[key]
+                        current["status"] = "failed"
+                        current["error"] = str(exc)
+                    failed.append(
+                        {
+                            "group": group,
+                            "rep": rep,
+                            "seed": seed,
+                            "error": str(exc),
+                        }
+                    )
+    finally:
+        stop_event.set()
+        renderer.join(timeout=1.2)
+        with state_lock:
+            snapshot = {
+                key: {
+                    "group": value["group"],
+                    "rep": value["rep"],
+                    "seed": value["seed"],
+                    "status": value["status"],
+                    "attempt": value["attempt"],
+                    "step": value["step"],
+                    "n_steps": value["n_steps"],
+                    "adopters": value["adopters"],
+                    "n_agents": value["n_agents"],
+                    "rate": value["rate"],
+                }
+                for key, value in task_states.items()
+            }
+        print(
+            _render_formal_batch_board(snapshot, list(args.groups), len(tasks), started_at),
+            flush=True,
+        )
 
     rows.sort(key=lambda item: (str(item["group"]), int(item["rep"])))
     fieldnames = [

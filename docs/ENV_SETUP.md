@@ -171,10 +171,12 @@ bash scripts/run_batch.sh
 📋 实验参数:
   并行 workers：10
   LLM 最大并发请求：50
-[run] group=A seed=12001 n_agents=100 n_steps=60
-[progress] group=A seed=12001 step=10/60 adopters=... rate=... elapsed=...
-[done] group=A seed=12001 final_adoption_rate=... model_calls=... elapsed=...
+[board] elapsed=8.0s total=60 queued=54 running=4 retrying=1 done=1 failed=0
+[groups] A 1/15 ███········· s=15/60 a=3 f=0 | B 0/15 ············ s=0/60 a=1 f=0 | C 0/15 ············ s=0/60 a=0 f=0 | D 0/15 ············ s=0/60 a=0 f=0
+[active] A-r2-s12002 running step=15/60 rate=0.120 try=1 | A-r3-s12003 retrying step=8/60 rate=0.080 try=2
 ```
+
+说明：批量模式会按 1 秒刷新看板；原始结果文件（`batch_summary.csv`、`metrics_*.json`、`simulation_*.csv`）仍按原路径落盘，不受影响。
 
 ### Go 测试 (可选，单独排查时使用)
 

@@ -24,6 +24,23 @@
   - `scripts/run_pilot.sh` 保留为便捷入口，但内部统一调用 `python/run_preflight.py --mode smoke`
   - 结论：`run_pilot` 不是第二套实验逻辑，而是 `run_preflight` 的薄包装入口
 
+## 工程优化记录（2026-03-13）
+- 目标：提升批量运行可观测性，避免只能等待 `log_interval` 才看到进度
+- 改动文件：`python/run_preflight.py`
+- 实施内容：
+  - `formal_batch` 新增 1 秒刷新看板：总览（queued/running/retrying/done/failed）+ 分组进度 + 活跃任务
+  - 单 run 增加 progress hook，将 `step/rate/attempt/status` 实时回传到看板
+  - 失败重试状态显式化：`starting -> running/retrying -> done/failed`
+  - 保持落盘口径不变：`batch_summary.csv`、`metrics_*.json`、`simulation_*.csv`
+- 并发配置记录（本轮目标口径）：`REPETITION_WORKERS=4`、`LLM_MAX_INFLIGHT=4`、`RUN_RETRIES=4`
+- 失败明细：本次代码检查与构建阶段无新增失败；运行态失败仍按 `failed` 计入汇总
+- 验证命令与结果：
+  - `uv run ruff check python`
+  - `uv run mypy python`
+  - `cd go && go test ./...`
+  - 结果：全部通过
+- 下一步：执行 100x60 小重复（每组 3-5 次）观察趋势是否翻转，并记录至本文件
+
 ## p/q 校准脉络（从理论预设到当前基线）
 - 语义锚点（理论口径）：
   - Bass (1969)：`p`=外生创新（无社交线索也可能发生的自发采纳），`q`=内生模仿（随已采纳比例放大）
