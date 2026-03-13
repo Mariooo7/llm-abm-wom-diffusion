@@ -12,7 +12,7 @@ network:
 # 口碑语义配置
 wom:
   strength: "weak"  # strong | weak
-  emotion_arousal: 0.12  # 0-1
+  emotion_arousal: 0.1  # 0-1
   valence: "positive"
   corpus_path: "data/wom/wom_corpus.csv"
   memory_limit: 5
@@ -20,8 +20,8 @@ wom:
 
 # Bass 模型参数
 bass:
-  innovation_coef: 0.002  # p
-  imitation_coef: 0.06    # q
+  innovation_coef: 0.003  # p
+  imitation_coef: 0.08    # q
 
 # 仿真配置
 simulation:
@@ -30,17 +30,6 @@ simulation:
   seed: 42
   use_llm: true
   llm_sampling_ratio: 1.0  # 100% 决策使用 LLM（保持研究设计）
-
-# LLM 配置 (可选)
-llm:
-  provider: "aliyun_bailian"
-  model: "qwen3.5-flash"
-  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
-  api_key_env: "LLM_API_KEY"
-  temperature: 0.2
-  timeout_seconds: 180
-  gateway_url: "http://127.0.0.1:18080/decide"
-  gateway_autostart: true
 
 # 输出配置
 output:

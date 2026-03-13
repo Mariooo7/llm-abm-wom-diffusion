@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,13 +64,15 @@ def get_config(group: str) -> SimulationConfig:
     wom = data.get("wom", {})
     bass = data.get("bass", {})
     simulation = data.get("simulation", {})
-    llm = data.get("llm", {})
     use_llm = simulation.get("use_llm", True)
     llm_sampling_ratio = float(simulation.get("llm_sampling_ratio", 1.0))
     if use_llm is not True:
         raise ValueError("研究模式要求 simulation.use_llm 必须为 true")
     if llm_sampling_ratio != 1.0:
         raise ValueError("研究模式要求 simulation.llm_sampling_ratio 必须为 1.0")
+    llm_server_addr = os.getenv("LLM_SERVER_ADDR", "").strip() or "127.0.0.1:18080"
+    llm_gateway_autostart_raw = os.getenv("LLM_GATEWAY_AUTOSTART", "").strip().lower()
+    llm_gateway_url_default = f"http://{llm_server_addr}/decide"
     return SimulationConfig(
         group=data.get("group", group.upper()),
         network_type=network.get("type", "small_world"),
@@ -88,14 +91,19 @@ def get_config(group: str) -> SimulationConfig:
         seed=simulation.get("seed", 42),
         use_llm=True,
         llm_sampling_ratio=llm_sampling_ratio,
-        llm_provider=str(llm.get("provider", "aliyun_bailian")),
-        llm_model=str(llm.get("model", "qwen3.5-flash")),
+        llm_provider=str(os.getenv("LLM_PROVIDER", "").strip() or "aliyun_bailian"),
+        llm_model=str(os.getenv("LLM_MODEL", "").strip() or "qwen3.5-flash"),
         llm_base_url=str(
-            llm.get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+            os.getenv("LLM_BASE_URL", "").strip()
+            or "https://dashscope.aliyuncs.com/compatible-mode/v1"
         ),
-        llm_api_key_env=str(llm.get("api_key_env", "LLM_API_KEY")),
-        llm_temperature=float(llm.get("temperature", 0.2)),
-        llm_timeout_seconds=int(llm.get("timeout_seconds", 30)),
-        llm_gateway_url=str(llm.get("gateway_url", "http://127.0.0.1:18080/decide")),
-        llm_gateway_autostart=bool(llm.get("gateway_autostart", True)),
+        llm_api_key_env=str(os.getenv("LLM_API_KEY_ENV", "").strip() or "LLM_API_KEY"),
+        llm_temperature=float(os.getenv("LLM_TEMPERATURE", "").strip() or 0.2),
+        llm_timeout_seconds=int(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "").strip() or 180),
+        llm_gateway_url=str(os.getenv("LLM_GATEWAY_URL", "").strip() or llm_gateway_url_default),
+        llm_gateway_autostart=(
+            llm_gateway_autostart_raw in {"1", "true", "yes"}
+            if llm_gateway_autostart_raw
+            else True
+        ),
     )

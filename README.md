@@ -121,6 +121,7 @@ cp .env.example .env
 ```
 
 将 `.env` 中的 `LLM_API_KEY` 填写为你的实际密钥。
+模型相关配置（provider/model/base_url/temperature/timeout）统一在 `.env` 管理；实验调度参数统一由脚本默认值或命令行覆盖。
 
 ### 一键运行当前正式实验
 
@@ -136,22 +137,22 @@ Windows PowerShell:
 ```powershell
 cd thesis-diffusion-simulation
 $runTag = "formal_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-$env:REPETITION_WORKERS="3"
+$env:REPETITION_WORKERS="10"
 $env:TIMEOUT_SECONDS="210"
 $env:RUN_RETRIES="2"
 $env:RETRY_BACKOFF_SECONDS="3"
-$env:LLM_MAX_INFLIGHT="3"
-uv run python python/run_preflight.py --mode formal_batch --groups A B C D --repetitions 15 --seed-start 12001 --repetition-workers 3 --run-retries 2 --retry-backoff-seconds 3 --timeout-seconds 210 --log-interval 10 --output-dir "data/results/$runTag" --raw-dir "data/raw/$runTag" --summary-file "data/results/$runTag/batch_summary.csv"
+$env:LLM_MAX_INFLIGHT="50"
+uv run python python/run_preflight.py --mode formal_batch --groups A B C D --repetitions 15 --seed-start 12001 --repetition-workers 10 --run-retries 2 --retry-backoff-seconds 3 --timeout-seconds 210 --log-interval 10 --output-dir "data/results/$runTag" --raw-dir "data/raw/$runTag" --summary-file "data/results/$runTag/batch_summary.csv"
 ```
 
-可选环境变量（不设置时使用稳健默认值）:
+可选运行时覆盖变量（建议在命令行设置，不建议写入 `.env`）:
 
 ```bash
-REPETITION_WORKERS=3
+REPETITION_WORKERS=10
 TIMEOUT_SECONDS=210
 RUN_RETRIES=2
 RETRY_BACKOFF_SECONDS=3
-LLM_MAX_INFLIGHT=3
+LLM_MAX_INFLIGHT=50
 ```
 
 运行完成后，结果默认落在带时间戳目录中：
@@ -162,21 +163,9 @@ LLM_MAX_INFLIGHT=3
 ### 运行单次快速验证（可选）
 
 ```bash
-# Python: 运行预实验 (单组单次)
-cd thesis-diffusion-simulation/python
-python -c "
-from models import DiffusionModel
-from config.settings import get_config
-
-config = get_config('A')  # 组 A: 小世界 + 强情感
-model = DiffusionModel(config)
-
-while model.running:
-    model.step()
-
-metrics = model.get_metrics()
-print(f'最终采纳率：{metrics[\"final_adoption_rate\"]:.2%}')
-"
+# Python: 运行预实验（统一入口）
+cd thesis-diffusion-simulation
+bash scripts/run_pilot.sh
 
 # Go: 运行 LLM 智能体测试 (需要配置 API Key)
 cd thesis-diffusion-simulation/go
@@ -216,11 +205,11 @@ go run cmd/main.go
 |------|-----|------|
 | N | 100 | 智能体数量 |
 | T | 60 | 仿真步数 |
-| p | 0.002 | 创新系数 (Bass 模型，四组一致) |
-| q(强组) | 0.08 | 模仿系数 (A/C) |
-| q(弱组) | 0.06 | 模仿系数 (B/D) |
-| emotion_arousal(强组) | 0.20 | 口碑情绪唤醒度 (A/C) |
-| emotion_arousal(弱组) | 0.12 | 口碑情绪唤醒度 (B/D) |
+| p | 0.003 | 创新系数 (Bass 模型，四组一致) |
+| q(强组) | 0.12 | 模仿系数 (A/C) |
+| q(弱组) | 0.08 | 模仿系数 (B/D) |
+| emotion_arousal(强组) | 0.25 | 口碑情绪唤醒度 (A/C) |
+| emotion_arousal(弱组) | 0.10 | 口碑情绪唤醒度 (B/D) |
 | K | 6 | 网络平均度数 |
 | repetitions | 15 | Monte Carlo 重复次数 |
 

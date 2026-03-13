@@ -135,19 +135,8 @@ LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_TEMPERATURE=0.2
 LLM_SEED=42
 LLM_ENABLE_THINKING=false
-LLM_RETRY_MAX_ATTEMPTS=8
-LLM_RETRY_BASE_MS=600
-LLM_RETRY_JITTER_MS=300
-LLM_MAX_INFLIGHT=3
 LLM_REQUEST_TIMEOUT_SECONDS=180
 LLM_SERVER_ADDR=127.0.0.1:18080
-
-# 正式实验执行参数（可按需覆盖）
-REPETITIONS=15
-REPETITION_WORKERS=3
-RUN_RETRIES=2
-RETRY_BACKOFF_SECONDS=3
-TIMEOUT_SECONDS=210
 ```
 
 ### 4. 获取 API Key
@@ -177,24 +166,14 @@ bash scripts/run_batch.sh
 
 **预期输出（示意）**:
 ```
-🧪 开始预实验 (Pilot Experiment)
-✅ Python 虚拟环境已激活
-📊 运行组 A (小世界 + 强情感) - 单次仿真...
-2026-03-02 12:00:00 | INFO | 使用配置：组 A (小世界 + 强情感)
-2026-03-02 12:00:00 | INFO | 模型已创建：100 个智能体
-2026-03-02 12:00:05 | INFO | 步数 5: 采纳者 12/100 (12.0%)
-2026-03-02 12:00:10 | INFO | 步数 10: 采纳者 35/100 (35.0%)
-2026-03-02 12:00:15 | INFO | 步数 15: 采纳者 78/100 (78.0%)
-2026-03-02 12:00:20 | INFO | 步数 20: 采纳者 95/100 (95.0%)
-
-📊 预实验结果:
-{
-  "total_adopters": 125,
-  "final_adoption_rate": 0.625,
-  ...
-}
-
-✅ 预实验完成！
+🚀 开始批量实验 (Batch Experiment)
+✅ Python 虚拟环境已激活 (.venv)
+📋 实验参数:
+  并行 workers：10
+  LLM 最大并发请求：50
+[run] group=A seed=12001 n_agents=100 n_steps=60
+[progress] group=A seed=12001 step=10/60 adopters=... rate=... elapsed=...
+[done] group=A seed=12001 final_adoption_rate=... model_calls=... elapsed=...
 ```
 
 ### Go 测试 (可选，单独排查时使用)
@@ -229,13 +208,13 @@ TokenUsageAvgPerCall => input=552.00 output=486.00 total=1038.00
 ### Q0: 为什么本地 `.env` 看起来比 `.env.example` 少变量？
 
 **说明**:
-1. `.env.example` 是模板，包含“完整建议项”；本地 `.env` 只保留“当前需要的覆盖项”也可以运行  
+1. `.env.example` 是模板；本地 `.env` 建议只保留长期稳定项（模型与网关配置）  
 2. 未在 `.env` 中声明的变量会回退到代码/脚本默认值  
-3. 批量脚本会按“环境变量优先、脚本默认兜底”解析运行参数  
+3. 实验调度参数（如 workers/retries/inflight）建议通过脚本默认值与命令行覆盖管理  
 
 **建议**:
 1. 先从 `.env.example` 复制出 `.env`，最少保留 `LLM_API_KEY`  
-2. 仅把需要改动的参数写入 `.env`，其他交给默认值  
+2. `.env` 以 `LLM_API_KEY/LLM_PROVIDER/LLM_MODEL/LLM_BASE_URL/LLM_TEMPERATURE/LLM_REQUEST_TIMEOUT_SECONDS/LLM_SERVER_ADDR` 为主  
 3. 每次改默认值时，同步更新 `.env.example` 与本文件，避免文档漂移
 
 ### Q1: `uv: command not found`
