@@ -56,6 +56,22 @@
   - `LLM_DECISION_RETRY_ATTEMPTS`（默认 2）
   - `LLM_DECISION_RETRY_BACKOFF_SECONDS`（默认 1）
 
+## 终端可视化升级（2026-03-13，续）
+- 目标：解决批量实验输出刷屏问题，改为清晰、简洁、可视化的单屏面板
+- 改动文件：
+  - `python/run_preflight.py`
+  - `scripts/run_batch.sh`
+  - `python/requirements.txt`
+- 实施内容：
+  - `formal_batch` 新增 Rich Live 面板（`UI_MODE=live`），原地刷新，不追加滚动日志
+  - 面板固定展示：总览状态、分组进度条、活跃任务表、最近事件
+  - 增加 UI 参数：`UI_MODE`（`live|stream`）、`UI_REFRESH_SECONDS`
+  - 非交互终端或 Rich 不可用时自动回退 `stream`，保证兼容
+  - `run_batch.sh` 在 `live` 模式使用 `script -q` 记录终端输出到日志文件，避免 `tee` 破坏动态渲染
+- 极小规模验证：
+  - 命令：A/B 两组，`n_agents=8`，`n_steps=4`，`repetitions=1`，`workers=2`
+  - 结果：`success_runs=2`，`failed_runs=0`，面板稳定显示且无刷屏
+
 ## p/q 校准脉络（从理论预设到当前基线）
 - 语义锚点（理论口径）：
   - Bass (1969)：`p`=外生创新（无社交线索也可能发生的自发采纳），`q`=内生模仿（随已采纳比例放大）

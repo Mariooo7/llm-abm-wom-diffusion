@@ -54,10 +54,11 @@ thesis-diffusion-simulation/
 - 默认 `avg_degree: 6`，用于降低强组过快饱和风险
 - 默认 `p=0.003`（四组统一），`q=0.12` (A/C) / `0.08` (B/D)，并启用 `round(N*p)` 初始创新者机制
 - 模型参数单一来源：`.env`（`LLM_PROVIDER/LLM_MODEL/LLM_BASE_URL/LLM_TEMPERATURE/LLM_REQUEST_TIMEOUT_SECONDS`）
-- 调度参数单一来源：`scripts/run_batch.sh` 默认值与命令行覆盖（`REPETITION_WORKERS/RUN_RETRIES/LLM_MAX_INFLIGHT/TIMEOUT_SECONDS/LLM_DECISION_RETRY_ATTEMPTS/LLM_DECISION_RETRY_BACKOFF_SECONDS`）
+- 调度参数单一来源：`scripts/run_batch.sh` 默认值与命令行覆盖（`REPETITION_WORKERS/RUN_RETRIES/LLM_MAX_INFLIGHT/TIMEOUT_SECONDS/LLM_DECISION_RETRY_ATTEMPTS/LLM_DECISION_RETRY_BACKOFF_SECONDS/UI_MODE/UI_REFRESH_SECONDS`）
 - 统一兼容地址：`LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`
 - Python 决策入口：`python/llm/decision_client.py` 的 `DecisionClient.decide`
 - 可重试错误判定入口：`python/llm/decision_client.py` 的 `is_retriable_decision_error_message`
+- 批量可视化入口：`python/run_preflight.py` 的 `_render_formal_batch_rich`（Rich Live 原地刷新）
 - Go 统一调用入口：`go/cmd/main.go` 的 `/decide` 服务模式（`LLM_SERVER_ADDR` 指定监听地址）
 - 语义边界：单次仿真保持随机异步更新，不在单步内做并发同步决策
 - 工程优化边界：允许并行运行多个 repetition，不改变单次 run 的决策顺序

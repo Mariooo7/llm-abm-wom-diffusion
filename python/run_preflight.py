@@ -2,10 +2,11 @@ import argparse
 import csv
 import json
 import os
+import sys
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, cast
@@ -18,6 +19,20 @@ from llm.decision_client import (
     is_retriable_decision_error_message,
 )
 from models import DiffusionModel
+
+try:
+    from rich.console import Group
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.table import Table
+
+    RICH_AVAILABLE = True
+except Exception:
+    Group = Any  # type: ignore[misc,assignment]
+    Live = Any  # type: ignore[misc,assignment]
+    Panel = Any  # type: ignore[misc,assignment]
+    Table = Any  # type: ignore[misc,assignment]
+    RICH_AVAILABLE = False
 
 
 def load_dotenv_if_exists(project_root: Path) -> None:
@@ -115,6 +130,138 @@ def _render_formal_batch_board(
             )
         lines.append("[active] " + " | ".join(focus_parts))
     return "\n".join(lines)
+
+
+def _make_snapshot(task_states: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {
+        key: {
+            "group": value["group"],
+            "rep": value["rep"],
+            "seed": value["seed"],
+            "status": value["status"],
+            "attempt": value["attempt"],
+            "step": value["step"],
+            "n_steps": value["n_steps"],
+            "adopters": value["adopters"],
+            "n_agents": value["n_agents"],
+            "rate": value["rate"],
+            "elapsed": value["elapsed"],
+            "error": value["error"],
+        }
+        for key, value in task_states.items()
+    }
+
+
+def _render_formal_batch_rich(
+    states: dict[str, dict[str, Any]],
+    groups: list[str],
+    total_runs: int,
+    started_at: float,
+    recent_events: list[str],
+) -> Any:
+    counts = {"queued": 0, "running": 0, "retrying": 0, "done": 0, "failed": 0}
+    for item in states.values():
+        status = str(item.get("status", "queued"))
+        if status in counts:
+            counts[status] += 1
+        else:
+            counts["queued"] += 1
+    elapsed = time.perf_counter() - started_at
+    completion = counts["done"] + counts["failed"]
+    header = Table.grid(expand=True)
+    header.add_column(justify="left")
+    header.add_column(justify="right")
+    header.add_row(
+        "Formal Batch Live Board",
+        f"elapsed={elapsed:.1f}s  done={counts['done']}/{total_runs} failed={counts['failed']}",
+    )
+    overview = Table.grid(expand=True)
+    overview.add_column()
+    overview.add_column()
+    overview.add_column()
+    overview.add_column()
+    overview.add_column()
+    overview.add_row(
+        f"[cyan]queued[/] {counts['queued']}",
+        f"[blue]running[/] {counts['running']}",
+        f"[yellow]retrying[/] {counts['retrying']}",
+        f"[green]done[/] {counts['done']}",
+        f"[red]failed[/] {counts['failed']}",
+    )
+    group_table = Table(expand=True, show_header=True, header_style="bold")
+    group_table.add_column("Group", justify="center", width=7)
+    group_table.add_column("Runs", justify="center", width=10)
+    group_table.add_column("Step", justify="center", width=30)
+    group_table.add_column("Active", justify="center", width=8)
+    group_table.add_column("Fail", justify="center", width=6)
+    for group in groups:
+        per_group = [v for v in states.values() if str(v.get("group")) == group]
+        group_total = len(per_group)
+        done_count = sum(1 for v in per_group if str(v.get("status")) == "done")
+        fail_count = sum(1 for v in per_group if str(v.get("status")) == "failed")
+        active = sum(
+            1
+            for v in per_group
+            if str(v.get("status")) in {"running", "retrying", "starting"}
+        )
+        max_step = max((int(v.get("step", 0)) for v in per_group), default=0)
+        n_steps = max((int(v.get("n_steps", 0)) for v in per_group), default=0)
+        runs_bar = _format_bar(done_count, group_total if group_total > 0 else 1, width=12)
+        step_bar = _format_bar(max_step, n_steps if n_steps > 0 else 1, width=14)
+        group_table.add_row(
+            group,
+            f"{runs_bar} {done_count}/{group_total}",
+            f"{step_bar} {max_step}/{n_steps}",
+            str(active),
+            str(fail_count),
+        )
+    active_table = Table(expand=True, show_header=True, header_style="bold")
+    active_table.add_column("Task", width=24)
+    active_table.add_column("Status", width=10)
+    active_table.add_column("Step", width=10, justify="right")
+    active_table.add_column("Rate", width=8, justify="right")
+    active_table.add_column("Try", width=5, justify="right")
+    active_rows = [
+        v
+        for v in states.values()
+        if str(v.get("status")) in {"running", "retrying", "starting"}
+    ]
+    active_rows.sort(
+        key=lambda item: (
+            str(item.get("status")),
+            str(item.get("group")),
+            int(item.get("rep", 0)),
+        )
+    )
+    for item in active_rows[:6]:
+        status = str(item.get("status"))
+        style = "blue"
+        if status == "retrying":
+            style = "yellow"
+        elif status == "starting":
+            style = "magenta"
+        active_table.add_row(
+            f"{item['group']}-r{item['rep']}-s{item['seed']}",
+            f"[{style}]{status}[/]",
+            f"{item['step']}/{item['n_steps']}",
+            f"{float(item['rate']):.3f}",
+            str(item["attempt"]),
+        )
+    if not active_rows:
+        active_table.add_row("-", "-", "-", "-", "-")
+    events_table = Table(expand=True, show_header=True, header_style="bold")
+    events_table.add_column("Recent Events")
+    if recent_events:
+        for event in recent_events[-6:]:
+            events_table.add_row(event)
+    else:
+        events_table.add_row("no recent events")
+    footer = f"progress={completion}/{total_runs}"
+    return Panel(
+        Group(header, overview, group_table, active_table, events_table, footer),
+        title="Batch UI",
+        border_style="cyan",
+    )
 
 
 def run_one(
@@ -256,6 +403,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
     workers = max(1, min(args.repetition_workers, len(tasks)))
     rows: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
+    recent_events: list[str] = []
     state_lock = threading.Lock()
     started_at = time.perf_counter()
     task_states: dict[str, dict[str, Any]] = {}
@@ -368,6 +516,14 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                 with state_lock:
                     current = task_states[key]
                     current["error"] = message
+                    if retriable and attempt < attempts_total - 1:
+                        event = (
+                            f"retry {group}-r{rep}-s{seed} "
+                            f"attempt={attempt + 2}/{attempts_total}"
+                        )
+                        recent_events.append(event)
+                        if len(recent_events) > 8:
+                            del recent_events[:-8]
                 if attempt >= attempts_total - 1 or not retriable:
                     raise
                 sleep_seconds = _retry_sleep_seconds(attempt)
@@ -375,82 +531,126 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     time.sleep(sleep_seconds)
         raise RuntimeError(str(last_exc) if last_exc is not None else "unknown error")
 
-    stop_event = threading.Event()
-
-    def _render_loop() -> None:
-        while not stop_event.is_set():
+    def _consume_future_result(
+        future: Any,
+        future_to_task: dict[Any, tuple[str, int, int]],
+    ) -> None:
+        group, rep, seed = future_to_task[future]
+        key = f"{group}:{rep}:{seed}"
+        try:
+            row = future.result()
+            rows.append(row)
             with state_lock:
-                snapshot = {
-                    key: {
-                        "group": value["group"],
-                        "rep": value["rep"],
-                        "seed": value["seed"],
-                        "status": value["status"],
-                        "attempt": value["attempt"],
-                        "step": value["step"],
-                        "n_steps": value["n_steps"],
-                        "adopters": value["adopters"],
-                        "n_agents": value["n_agents"],
-                        "rate": value["rate"],
-                    }
-                    for key, value in task_states.items()
+                event = f"done {group}-r{rep}-s{seed} rate={float(row['final_adoption_rate']):.3f}"
+                recent_events.append(event)
+                if len(recent_events) > 8:
+                    del recent_events[:-8]
+        except Exception as exc:
+            with state_lock:
+                current = task_states[key]
+                current["status"] = "failed"
+                current["error"] = str(exc)
+                recent_events.append(f"failed {group}-r{rep}-s{seed} err={str(exc)[:90]}")
+                if len(recent_events) > 8:
+                    del recent_events[:-8]
+            failed.append(
+                {
+                    "group": group,
+                    "rep": rep,
+                    "seed": seed,
+                    "error": str(exc),
                 }
-            print(
-                _render_formal_batch_board(snapshot, list(args.groups), len(tasks), started_at),
-                flush=True,
             )
-            stop_event.wait(1.0)
 
-    renderer = threading.Thread(target=_render_loop, daemon=True)
-    renderer.start()
-    try:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            future_to_task = {
-                pool.submit(_run_task, group, rep, seed): (group, rep, seed)
-                for group, rep, seed in tasks
-            }
-            for future in as_completed(future_to_task):
-                group, rep, seed = future_to_task[future]
-                key = f"{group}:{rep}:{seed}"
-                try:
-                    row = future.result()
-                    rows.append(row)
-                except Exception as exc:
-                    with state_lock:
-                        current = task_states[key]
-                        current["status"] = "failed"
-                        current["error"] = str(exc)
-                    failed.append(
-                        {
-                            "group": group,
-                            "rep": rep,
-                            "seed": seed,
-                            "error": str(exc),
-                        }
+    refresh_seconds = max(0.2, float(getattr(args, "ui_refresh_seconds", 1.0)))
+    requested_ui_mode = str(getattr(args, "ui_mode", "live"))
+    use_live_ui = requested_ui_mode == "live" and RICH_AVAILABLE and sys.stdout.isatty()
+    if requested_ui_mode == "live" and not use_live_ui:
+        reason = "rich 不可用" if not RICH_AVAILABLE else "终端非交互模式"
+        print(f"[ui] 已回退为 stream 模式: {reason}", flush=True)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        future_to_task = {
+            pool.submit(_run_task, group, rep, seed): (group, rep, seed)
+            for group, rep, seed in tasks
+        }
+        if use_live_ui:
+            with Live(
+                _render_formal_batch_rich(
+                    _make_snapshot(task_states),
+                    list(args.groups),
+                    len(tasks),
+                    started_at,
+                    list(recent_events),
+                ),
+                refresh_per_second=max(1, int(round(1.0 / refresh_seconds))),
+                transient=False,
+            ) as live:
+                pending = set(future_to_task.keys())
+                while pending:
+                    done, pending = wait(
+                        pending,
+                        timeout=refresh_seconds,
+                        return_when=FIRST_COMPLETED,
                     )
-    finally:
-        stop_event.set()
-        renderer.join(timeout=1.2)
-        with state_lock:
-            snapshot = {
-                key: {
-                    "group": value["group"],
-                    "rep": value["rep"],
-                    "seed": value["seed"],
-                    "status": value["status"],
-                    "attempt": value["attempt"],
-                    "step": value["step"],
-                    "n_steps": value["n_steps"],
-                    "adopters": value["adopters"],
-                    "n_agents": value["n_agents"],
-                    "rate": value["rate"],
-                }
-                for key, value in task_states.items()
-            }
-        print(
-            _render_formal_batch_board(snapshot, list(args.groups), len(tasks), started_at),
-            flush=True,
-        )
+                    for future in done:
+                        _consume_future_result(future, future_to_task)
+                    with state_lock:
+                        snapshot = _make_snapshot(task_states)
+                        events_snapshot = list(recent_events)
+                    live.update(
+                        _render_formal_batch_rich(
+                            snapshot,
+                            list(args.groups),
+                            len(tasks),
+                            started_at,
+                            events_snapshot,
+                        )
+                    )
+                with state_lock:
+                    snapshot = _make_snapshot(task_states)
+                    events_snapshot = list(recent_events)
+                live.update(
+                    _render_formal_batch_rich(
+                        snapshot,
+                        list(args.groups),
+                        len(tasks),
+                        started_at,
+                        events_snapshot,
+                    )
+                )
+        else:
+            stop_event = threading.Event()
+
+            def _render_loop() -> None:
+                while not stop_event.is_set():
+                    with state_lock:
+                        snapshot = _make_snapshot(task_states)
+                    print(
+                        _render_formal_batch_board(
+                            snapshot,
+                            list(args.groups),
+                            len(tasks),
+                            started_at,
+                        ),
+                        flush=True,
+                    )
+                    stop_event.wait(refresh_seconds)
+
+            renderer = threading.Thread(target=_render_loop, daemon=True)
+            renderer.start()
+            try:
+                for future in as_completed(future_to_task):
+                    _consume_future_result(future, future_to_task)
+            finally:
+                stop_event.set()
+                renderer.join(timeout=refresh_seconds + 0.3)
+                with state_lock:
+                    snapshot = _make_snapshot(task_states)
+                print(
+                    _render_formal_batch_board(snapshot, list(args.groups), len(tasks), started_at),
+                    flush=True,
+                )
 
     rows.sort(key=lambda item: (str(item["group"]), int(item["rep"])))
     fieldnames = [
@@ -734,6 +934,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repetition-workers", type=int, default=1)
     parser.add_argument("--run-retries", type=int, default=1)
     parser.add_argument("--retry-backoff-seconds", type=float, default=2.0)
+    parser.add_argument("--ui-mode", choices=["live", "stream"], default="live")
+    parser.add_argument("--ui-refresh-seconds", type=float, default=1.0)
     parser.add_argument("--output-dir", default="data/results")
     parser.add_argument("--raw-dir", default="data/raw")
     parser.add_argument("--summary-file", default="data/results/batch_summary.csv")
