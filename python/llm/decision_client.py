@@ -18,6 +18,26 @@ from threading import Lock
 from typing import Any
 from urllib import error, request
 
+RETRIABLE_ERROR_KEYWORDS = (
+    "gateway timeout",
+    "timed out",
+    "gateway unavailable",
+    "http error 429",
+    "status=429",
+    "limit_burst_rate",
+    "http error 502",
+    "http error 503",
+    "http error 504",
+    "status=502",
+    "status=503",
+    "status=504",
+)
+
+
+def is_retriable_decision_error_message(message: str) -> bool:
+    normalized = message.lower()
+    return any(keyword in normalized for keyword in RETRIABLE_ERROR_KEYWORDS)
+
 
 @dataclass
 class DecisionRequest:

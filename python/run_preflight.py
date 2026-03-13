@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any, cast
 
 from config.settings import SimulationConfig, get_config
-from llm.decision_client import DecisionClient, DecisionRequest, DecisionTask
+from llm.decision_client import (
+    DecisionClient,
+    DecisionRequest,
+    DecisionTask,
+    is_retriable_decision_error_message,
+)
 from models import DiffusionModel
 
 
@@ -272,22 +277,6 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
             "error": "",
         }
 
-    def _is_retriable_error_message(message: str) -> bool:
-        msg = message.lower()
-        if "gateway timeout" in msg or "timed out" in msg:
-            return True
-        if "gateway unavailable" in msg:
-            return True
-        if "http error 429" in msg:
-            return True
-        if "status=429" in msg or "limit_burst_rate" in msg:
-            return True
-        if "http error 502" in msg or "http error 503" in msg or "http error 504" in msg:
-            return True
-        if "status=502" in msg or "status=503" in msg or "status=504" in msg:
-            return True
-        return False
-
     def _retry_sleep_seconds(attempt_index: int) -> float:
         base = cast(float, args.retry_backoff_seconds)
         if base <= 0:
@@ -375,7 +364,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
             except Exception as exc:
                 last_exc = exc
                 message = str(exc)
-                retriable = _is_retriable_error_message(message)
+                retriable = is_retriable_decision_error_message(message)
                 with state_lock:
                     current = task_states[key]
                     current["error"] = message

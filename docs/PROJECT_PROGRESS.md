@@ -41,6 +41,21 @@
   - 结果：全部通过
 - 下一步：执行 100x60 小重复（每组 3-5 次）观察趋势是否翻转，并记录至本文件
 
+## 工程维护记录（2026-03-13，续）
+- 目标：清理冗余实现、降低重试语义分叉风险，并提升代码可读性
+- 冗余/矛盾治理：
+  - 将“可重试错误判定”统一收敛为 `python/llm/decision_client.py::is_retriable_decision_error_message`
+  - `run_preflight.py` 与 `model.py` 不再各自维护一套关键字，避免后续一处更新另一处遗漏
+- 运行容错语义补强：
+  - `model.step` 中新增“单步决策级重试”路径，失败先在当前 step 局部重试
+  - 仅在局部重试耗尽后，才向上触发 run 级重试，减少弱组长跑时整轮重跑概率
+- 命名与可读性改进：
+  - 拆分 `_run_agent_step_with_retry` 与 `_decision_retry_sleep_seconds`，替代内联重试分支
+  - 保留 run 内随机异步更新语义不变，确保研究可比性
+- 新增运行参数（脚本已接入并打印）：
+  - `LLM_DECISION_RETRY_ATTEMPTS`（默认 2）
+  - `LLM_DECISION_RETRY_BACKOFF_SECONDS`（默认 1）
+
 ## p/q 校准脉络（从理论预设到当前基线）
 - 语义锚点（理论口径）：
   - Bass (1969)：`p`=外生创新（无社交线索也可能发生的自发采纳），`q`=内生模仿（随已采纳比例放大）

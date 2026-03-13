@@ -153,6 +153,8 @@ TIMEOUT_SECONDS=210
 RUN_RETRIES=2
 RETRY_BACKOFF_SECONDS=3
 LLM_MAX_INFLIGHT=50
+LLM_DECISION_RETRY_ATTEMPTS=2
+LLM_DECISION_RETRY_BACKOFF_SECONDS=1
 ```
 
 运行完成后，结果默认落在带时间戳目录中：
@@ -164,6 +166,10 @@ LLM_MAX_INFLIGHT=50
 - 总览：`queued / running / retrying / done / failed`
 - 分组：每组完成数、步数进度条、活跃任务数与失败数
 - 活跃任务：最多显示 4 条，包含 `group/rep/seed/step/rate/try`
+
+run 内部默认启用“失败点续跑”（单步决策级重试）：
+- 当某个 agent 决策调用出现可重试错误时，优先在当前 step 内局部重试
+- 仅在局部重试耗尽后，才触发 run 级重试
 
 ### 运行单次快速验证（可选）
 

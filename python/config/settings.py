@@ -40,6 +40,8 @@ class SimulationConfig:
     llm_timeout_seconds: int
     llm_gateway_url: str
     llm_gateway_autostart: bool
+    llm_decision_retry_attempts: int
+    llm_decision_retry_backoff_seconds: float
 
 
 def get_config(group: str) -> SimulationConfig:
@@ -105,5 +107,13 @@ def get_config(group: str) -> SimulationConfig:
             llm_gateway_autostart_raw in {"1", "true", "yes"}
             if llm_gateway_autostart_raw
             else True
+        ),
+        llm_decision_retry_attempts=max(
+            0,
+            int(os.getenv("LLM_DECISION_RETRY_ATTEMPTS", "").strip() or 2),
+        ),
+        llm_decision_retry_backoff_seconds=max(
+            0.0,
+            float(os.getenv("LLM_DECISION_RETRY_BACKOFF_SECONDS", "").strip() or 1.0),
         ),
     )
