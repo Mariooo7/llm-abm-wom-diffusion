@@ -68,7 +68,6 @@ LLM_RETRY_BASE_MS="${LLM_RETRY_BASE_MS:-600}"
 LLM_RETRY_JITTER_MS="${LLM_RETRY_JITTER_MS:-300}"
 LLM_DECISION_RETRY_ATTEMPTS="${LLM_DECISION_RETRY_ATTEMPTS:-2}"
 LLM_DECISION_RETRY_BACKOFF_SECONDS="${LLM_DECISION_RETRY_BACKOFF_SECONDS:-1}"
-UI_MODE="${UI_MODE:-live}"
 UI_REFRESH_SECONDS="${UI_REFRESH_SECONDS:-1}"
 RUN_TAG="${RUN_TAG:-formal_$(date +%Y%m%d_%H%M%S)}"
 OUTPUT_DIR="${OUTPUT_DIR:-data/results/$RUN_TAG}"
@@ -84,10 +83,6 @@ mkdir -p "$OUTPUT_DIR"
 mkdir -p "$RAW_DIR"
 
 RUN_LOG="$OUTPUT_DIR/run_batch_$(date +%Y%m%d_%H%M%S).log"
-if [ "$UI_MODE" != "live" ]; then
-    exec > >(tee -a "$RUN_LOG") 2>&1
-fi
-
 echo ""
 echo "📋 实验参数:"
 echo "  实验组：${EXP_GROUPS[*]}"
@@ -106,7 +101,7 @@ echo "  LLM 超时秒数：$TIMEOUT_SECONDS"
 echo "  LLM 最大并发请求：$LLM_MAX_INFLIGHT"
 echo "  单步决策重试次数：$LLM_DECISION_RETRY_ATTEMPTS"
 echo "  单步重试退避起始秒数：$LLM_DECISION_RETRY_BACKOFF_SECONDS"
-echo "  终端 UI 模式：$UI_MODE"
+echo "  终端 UI 模式：live（自动降级 compact）"
 echo "  UI 刷新秒数：$UI_REFRESH_SECONDS"
 echo ""
 
@@ -128,7 +123,7 @@ for g in ['A', 'B', 'C', 'D']:
     get_config(g)
 print('✅ 配置预检查通过: A/B/C/D')
 "
-if [ "$UI_MODE" = "live" ] && command -v script >/dev/null 2>&1; then
+if command -v script >/dev/null 2>&1; then
     script -q "$RUN_LOG" python python/run_preflight.py \
         --mode formal_batch \
         --groups "${EXP_GROUPS[@]}" \
@@ -139,7 +134,6 @@ if [ "$UI_MODE" = "live" ] && command -v script >/dev/null 2>&1; then
         --repetition-workers "$REPETITION_WORKERS" \
         --run-retries "$RUN_RETRIES" \
         --retry-backoff-seconds "$RETRY_BACKOFF_SECONDS" \
-        --ui-mode "$UI_MODE" \
         --ui-refresh-seconds "$UI_REFRESH_SECONDS" \
         --timeout-seconds "$TIMEOUT_SECONDS" \
         --log-interval "$LOG_INTERVAL" \
@@ -157,7 +151,6 @@ else
         --repetition-workers "$REPETITION_WORKERS" \
         --run-retries "$RUN_RETRIES" \
         --retry-backoff-seconds "$RETRY_BACKOFF_SECONDS" \
-        --ui-mode "$UI_MODE" \
         --ui-refresh-seconds "$UI_REFRESH_SECONDS" \
         --timeout-seconds "$TIMEOUT_SECONDS" \
         --log-interval "$LOG_INTERVAL" \

@@ -54,12 +54,7 @@ def _format_bar(current: int, total: int, width: int = 12) -> str:
     return "█" * filled + "·" * (width - filled)
 
 
-def _render_formal_batch_board(
-    states: dict[str, dict[str, Any]],
-    groups: list[str],
-    total_runs: int,
-    started_at: float,
-) -> str:
+def _status_counts(states: dict[str, dict[str, Any]]) -> dict[str, int]:
     counts = {"queued": 0, "running": 0, "retrying": 0, "done": 0, "failed": 0}
     for item in states.values():
         status = str(item.get("status", "queued"))
@@ -67,12 +62,23 @@ def _render_formal_batch_board(
             counts[status] += 1
         else:
             counts["queued"] += 1
+    return counts
+
+
+def _render_formal_batch_compact(
+    states: dict[str, dict[str, Any]],
+    groups: list[str],
+    total_runs: int,
+    started_at: float,
+    recent_events: list[str],
+) -> str:
+    counts = _status_counts(states)
     elapsed = time.perf_counter() - started_at
+    completion = counts["done"] + counts["failed"]
     lines = [
         (
-            f"[board] elapsed={elapsed:.1f}s total={total_runs} "
-            f"queued={counts['queued']} running={counts['running']} "
-            f"retrying={counts['retrying']} done={counts['done']} failed={counts['failed']}"
+            f"[batch] elapsed={elapsed:.1f}s "
+            f"progress={completion}/{total_runs} failed={counts['failed']}"
         )
     ]
     group_parts: list[str] = []
@@ -96,39 +102,9 @@ def _render_formal_batch_board(
         group_parts.append(
             summary
         )
-    lines.append("[groups] " + " | ".join(group_parts))
-    active_rows = [
-        v
-        for v in states.values()
-        if str(v.get("status")) in {"running", "retrying", "starting"}
-    ]
-    active_rows.sort(
-        key=lambda item: (
-            str(item.get("status")),
-            str(item.get("group")),
-            int(item.get("rep", 0)),
-        )
-    )
-    if active_rows:
-        focus = active_rows[:4]
-        focus_parts = []
-        for item in focus:
-            status = str(item.get("status"))
-            group = str(item.get("group"))
-            rep = int(item.get("rep", 0))
-            seed = int(item.get("seed", 0))
-            step = int(item.get("step", 0))
-            n_steps = int(item.get("n_steps", 0))
-            rate = float(item.get("rate", 0.0))
-            attempt = int(item.get("attempt", 1))
-            detail = (
-                f"{group}-r{rep}-s{seed} {status} "
-                f"step={step}/{n_steps} rate={rate:.3f} try={attempt}"
-            )
-            focus_parts.append(
-                detail
-            )
-        lines.append("[active] " + " | ".join(focus_parts))
+    lines.append("groups: " + " | ".join(group_parts))
+    if recent_events:
+        lines.append("recent: " + " | ".join(recent_events[-2:]))
     return "\n".join(lines)
 
 
@@ -159,13 +135,7 @@ def _render_formal_batch_rich(
     started_at: float,
     recent_events: list[str],
 ) -> Any:
-    counts = {"queued": 0, "running": 0, "retrying": 0, "done": 0, "failed": 0}
-    for item in states.values():
-        status = str(item.get("status", "queued"))
-        if status in counts:
-            counts[status] += 1
-        else:
-            counts["queued"] += 1
+    counts = _status_counts(states)
     elapsed = time.perf_counter() - started_at
     completion = counts["done"] + counts["failed"]
     header = Table.grid(expand=True)
@@ -563,11 +533,10 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
             )
 
     refresh_seconds = max(0.2, float(getattr(args, "ui_refresh_seconds", 1.0)))
-    requested_ui_mode = str(getattr(args, "ui_mode", "live"))
-    use_live_ui = requested_ui_mode == "live" and RICH_AVAILABLE and sys.stdout.isatty()
-    if requested_ui_mode == "live" and not use_live_ui:
+    use_live_ui = RICH_AVAILABLE and sys.stdout.isatty()
+    if not use_live_ui:
         reason = "rich 不可用" if not RICH_AVAILABLE else "终端非交互模式"
-        print(f"[ui] 已回退为 stream 模式: {reason}", flush=True)
+        print(f"[ui] 已回退为 compact 模式: {reason}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         future_to_task = {
@@ -620,35 +589,49 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     )
                 )
         else:
-            stop_event = threading.Event()
-
-            def _render_loop() -> None:
-                while not stop_event.is_set():
-                    with state_lock:
-                        snapshot = _make_snapshot(task_states)
+            last_completion = -1
+            last_rendered_at = 0.0
+            render_interval = max(4.0, refresh_seconds * 4)
+            for future in as_completed(future_to_task):
+                _consume_future_result(future, future_to_task)
+                with state_lock:
+                    snapshot = _make_snapshot(task_states)
+                    events_snapshot = list(recent_events)
+                counts = _status_counts(snapshot)
+                completion = counts["done"] + counts["failed"]
+                now = time.perf_counter()
+                should_render = (
+                    completion != last_completion
+                    or now - last_rendered_at >= render_interval
+                    or completion >= len(tasks)
+                )
+                if should_render:
                     print(
-                        _render_formal_batch_board(
+                        _render_formal_batch_compact(
                             snapshot,
                             list(args.groups),
                             len(tasks),
                             started_at,
+                            events_snapshot,
                         ),
                         flush=True,
                     )
-                    stop_event.wait(refresh_seconds)
-
-            renderer = threading.Thread(target=_render_loop, daemon=True)
-            renderer.start()
-            try:
-                for future in as_completed(future_to_task):
-                    _consume_future_result(future, future_to_task)
-            finally:
-                stop_event.set()
-                renderer.join(timeout=refresh_seconds + 0.3)
-                with state_lock:
-                    snapshot = _make_snapshot(task_states)
+                    last_completion = completion
+                    last_rendered_at = now
+            with state_lock:
+                snapshot = _make_snapshot(task_states)
+                events_snapshot = list(recent_events)
+            final_counts = _status_counts(snapshot)
+            final_completion = final_counts["done"] + final_counts["failed"]
+            if final_completion != last_completion:
                 print(
-                    _render_formal_batch_board(snapshot, list(args.groups), len(tasks), started_at),
+                    _render_formal_batch_compact(
+                        snapshot,
+                        list(args.groups),
+                        len(tasks),
+                        started_at,
+                        events_snapshot,
+                    ),
                     flush=True,
                 )
 
@@ -934,7 +917,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repetition-workers", type=int, default=1)
     parser.add_argument("--run-retries", type=int, default=1)
     parser.add_argument("--retry-backoff-seconds", type=float, default=2.0)
-    parser.add_argument("--ui-mode", choices=["live", "stream"], default="live")
     parser.add_argument("--ui-refresh-seconds", type=float, default=1.0)
     parser.add_argument("--output-dir", default="data/results")
     parser.add_argument("--raw-dir", default="data/raw")

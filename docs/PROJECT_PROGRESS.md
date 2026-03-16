@@ -63,10 +63,10 @@
   - `scripts/run_batch.sh`
   - `python/requirements.txt`
 - 实施内容：
-  - `formal_batch` 新增 Rich Live 面板（`UI_MODE=live`），原地刷新，不追加滚动日志
+-  - `formal_batch` 新增 Rich Live 面板，原地刷新，不追加滚动日志
   - 面板固定展示：总览状态、分组进度条、活跃任务表、最近事件
-  - 增加 UI 参数：`UI_MODE`（`live|stream`）、`UI_REFRESH_SECONDS`
-  - 非交互终端或 Rich 不可用时自动回退 `stream`，保证兼容
+-  - 增加 UI 参数：`UI_REFRESH_SECONDS`
+-  - 非交互终端或 Rich 不可用时自动回退低频 `compact` 摘要输出，保证兼容与可读性
   - `run_batch.sh` 在 `live` 模式使用 `script -q` 记录终端输出到日志文件，避免 `tee` 破坏动态渲染
 - 极小规模验证：
   - 命令：A/B 两组，`n_agents=8`，`n_steps=4`，`repetitions=1`，`workers=2`

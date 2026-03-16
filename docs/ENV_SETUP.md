@@ -173,14 +173,14 @@ bash scripts/run_batch.sh
   LLM 最大并发请求：50
   单步决策重试次数：2
   单步重试退避起始秒数：1
-  终端 UI 模式：live
+  终端 UI 模式：live（自动降级 compact）
   UI 刷新秒数：1
-[board] elapsed=8.0s total=60 queued=54 running=4 retrying=1 done=1 failed=0
-[groups] A 1/15 ███········· s=15/60 a=3 f=0 | B 0/15 ············ s=0/60 a=1 f=0 | C 0/15 ············ s=0/60 a=0 f=0 | D 0/15 ············ s=0/60 a=0 f=0
-[active] A-r2-s12002 running step=15/60 rate=0.120 try=1 | A-r3-s12003 retrying step=8/60 rate=0.080 try=2
+╭────────────────────────────────────── Batch UI ───────────────────────────────────────╮
+│ Formal Batch Live Board                              elapsed=8.0s  done=1/60 failed=0 │
+╰───────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
-说明：默认 `UI_MODE=live`，终端以 Rich Live 原地刷新，不会持续刷屏；非交互终端会自动回退到 `stream`。原始结果文件（`batch_summary.csv`、`metrics_*.json`、`simulation_*.csv`）仍按原路径落盘，不受影响。单次 run 内决策失败会先在当前 step 局部重试（`LLM_DECISION_RETRY_ATTEMPTS`、`LLM_DECISION_RETRY_BACKOFF_SECONDS`），局部重试耗尽后才进入 run 级重试。
+说明：默认启用 Rich Live 原地刷新，不会持续刷屏；非交互终端会自动回退到低频 `compact` 摘要输出。原始结果文件（`batch_summary.csv`、`metrics_*.json`、`simulation_*.csv`）仍按原路径落盘，不受影响。单次 run 内决策失败会先在当前 step 局部重试（`LLM_DECISION_RETRY_ATTEMPTS`、`LLM_DECISION_RETRY_BACKOFF_SECONDS`），局部重试耗尽后才进入 run 级重试。
 
 ### Go 测试 (可选，单独排查时使用)
 
