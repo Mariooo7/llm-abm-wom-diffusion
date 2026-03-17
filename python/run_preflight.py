@@ -65,6 +65,115 @@ def _status_counts(states: dict[str, dict[str, Any]]) -> dict[str, int]:
     return counts
 
 
+def _run_status_marker(status: str) -> str:
+    if status == "done":
+        return "✓"
+    if status == "failed":
+        return "✗"
+    if status == "running":
+        return "▶"
+    if status == "retrying":
+        return "↻"
+    if status == "starting":
+        return "…"
+    return "·"
+
+
+def _format_group_run_steps(
+    per_group: list[dict[str, Any]],
+    max_items: int | None = None,
+) -> str:
+    ordered = sorted(per_group, key=lambda item: int(item.get("rep", 0)))
+    if max_items is not None:
+        visible = ordered[:max_items]
+    else:
+        visible = ordered
+    tokens: list[str] = []
+    for item in visible:
+        rep = int(item.get("rep", 0))
+        step = int(item.get("step", 0))
+        n_steps = int(item.get("n_steps", 0))
+        status = str(item.get("status", "queued"))
+        marker = _run_status_marker(status)
+        if status == "done":
+            tokens.append(f"r{rep}:{n_steps}{marker}")
+        else:
+            tokens.append(f"r{rep}:{step}/{n_steps}{marker}")
+    hidden = len(ordered) - len(visible)
+    if hidden > 0:
+        tokens.append(f"+{hidden}")
+    return " ".join(tokens) if tokens else "-"
+
+
+def _build_adoption_timeline(model: DiffusionModel, n_agents: int) -> list[dict[str, float | int]]:
+    records: list[dict[str, float | int]] = []
+    initial = int(getattr(model, "initial_innovators", 0))
+    base_rate = initial / max(1, n_agents)
+    records.append(
+        {
+            "step": 0,
+            "total_adopters": initial,
+            "adoption_rate": round(base_rate, 6),
+        }
+    )
+    frame = model.datacollector.get_model_vars_dataframe()
+    for row_index, (_, row) in enumerate(frame.iterrows(), start=1):
+        total_adopters = int(row["total_adopters"])
+        adoption_rate = float(row["adoption_rate"])
+        records.append(
+            {
+                "step": row_index,
+                "total_adopters": total_adopters,
+                "adoption_rate": round(adoption_rate, 6),
+            }
+        )
+    return records
+
+
+def _build_adoption_checkpoints(
+    timeline: list[dict[str, float | int]],
+    every_steps: int = 10,
+) -> list[dict[str, float | int]]:
+    if every_steps <= 0:
+        every_steps = 10
+    checkpoints: list[dict[str, float | int]] = []
+    last_step = int(timeline[-1]["step"]) if timeline else 0
+    for row in timeline:
+        step = int(row["step"])
+        if step == 0 or step % every_steps == 0 or step == last_step:
+            checkpoints.append(row)
+    return checkpoints
+
+
+def _first_step_at_rate(
+    timeline: list[dict[str, float | int]],
+    threshold: float,
+) -> int | None:
+    for row in timeline:
+        if float(row["adoption_rate"]) >= threshold:
+            return int(row["step"])
+    return None
+
+
+def _compute_adoption_auc(
+    timeline: list[dict[str, float | int]],
+    n_steps: int,
+) -> float:
+    if len(timeline) < 2:
+        return round(float(timeline[0]["adoption_rate"]) if timeline else 0.0, 6)
+    area = 0.0
+    prev_step = int(timeline[0]["step"])
+    prev_rate = float(timeline[0]["adoption_rate"])
+    for row in timeline[1:]:
+        step = int(row["step"])
+        rate = float(row["adoption_rate"])
+        area += (prev_rate + rate) * 0.5 * max(0, step - prev_step)
+        prev_step = step
+        prev_rate = rate
+    normalized = area / max(1, n_steps)
+    return round(normalized, 6)
+
+
 def _render_formal_batch_compact(
     states: dict[str, dict[str, Any]],
     groups: list[str],
@@ -95,14 +204,25 @@ def _render_formal_batch_compact(
         max_step = max((int(v.get("step", 0)) for v in per_group), default=0)
         n_steps = max((int(v.get("n_steps", 0)) for v in per_group), default=0)
         bar = _format_bar(max_step, n_steps if n_steps > 0 else 1)
+        rates = [float(v.get("rate", 0.0)) for v in per_group]
+        rate_mean = sum(rates) / len(rates) if rates else 0.0
+        rate_max = max(rates) if rates else 0.0
+        calls_done = sum(
+            int(v.get("model_calls", 0))
+            for v in per_group
+            if str(v.get("status")) == "done"
+        )
         summary = (
             f"{group} {done_count}/{group_total} {bar} "
-            f"s={max_step}/{n_steps} a={active} f={fail_count}"
+            f"stepμ/max={max_step}/{n_steps} rateμ/max={rate_mean:.2f}/{rate_max:.2f} "
+            f"calls={calls_done} active={active} fail={fail_count}"
         )
-        group_parts.append(
-            summary
-        )
+        group_parts.append(summary)
     lines.append("groups: " + " | ".join(group_parts))
+    for group in groups:
+        per_group = [v for v in states.values() if str(v.get("group")) == group]
+        lines.append(f"runs[{group}]: {_format_group_run_steps(per_group, max_items=10)}")
+    lines.append("legend: ✓ done  ✗ failed  ▶ running  ↻ retrying  … starting  · queued")
     if recent_events:
         lines.append("recent: " + " | ".join(recent_events[-2:]))
     return "\n".join(lines)
@@ -122,6 +242,8 @@ def _make_snapshot(task_states: dict[str, dict[str, Any]]) -> dict[str, dict[str
             "n_agents": value["n_agents"],
             "rate": value["rate"],
             "elapsed": value["elapsed"],
+            "model_calls": value["model_calls"],
+            "total_tokens": value["total_tokens"],
             "error": value["error"],
         }
         for key, value in task_states.items()
@@ -159,11 +281,14 @@ def _render_formal_batch_rich(
         f"[red]failed[/] {counts['failed']}",
     )
     group_table = Table(expand=True, show_header=True, header_style="bold")
-    group_table.add_column("Group", justify="center", width=7)
+    group_table.add_column("Group", justify="center", width=6)
     group_table.add_column("Runs", justify="center", width=10)
-    group_table.add_column("Step", justify="center", width=30)
-    group_table.add_column("Active", justify="center", width=8)
+    group_table.add_column("Step μ/max", justify="center", width=21)
+    group_table.add_column("Adopt μ/max", justify="center", width=14)
+    group_table.add_column("Calls(done)", justify="center", width=12)
+    group_table.add_column("Active", justify="center", width=7)
     group_table.add_column("Fail", justify="center", width=6)
+    group_run_steps: dict[str, str] = {}
     for group in groups:
         per_group = [v for v in states.values() if str(v.get("group")) == group]
         group_total = len(per_group)
@@ -176,19 +301,35 @@ def _render_formal_batch_rich(
         )
         max_step = max((int(v.get("step", 0)) for v in per_group), default=0)
         n_steps = max((int(v.get("n_steps", 0)) for v in per_group), default=0)
+        rates = [float(v.get("rate", 0.0)) for v in per_group]
+        rate_mean = sum(rates) / len(rates) if rates else 0.0
+        rate_max = max(rates) if rates else 0.0
+        calls_done = sum(
+            int(v.get("model_calls", 0))
+            for v in per_group
+            if str(v.get("status")) == "done"
+        )
+        group_run_steps[group] = _format_group_run_steps(per_group, max_items=None)
         runs_bar = _format_bar(done_count, group_total if group_total > 0 else 1, width=12)
         step_bar = _format_bar(max_step, n_steps if n_steps > 0 else 1, width=14)
         group_table.add_row(
             group,
             f"{runs_bar} {done_count}/{group_total}",
             f"{step_bar} {max_step}/{n_steps}",
+            f"{rate_mean:.3f}/{rate_max:.3f}",
+            str(calls_done),
             str(active),
             str(fail_count),
         )
+    runs_table = Table(expand=True, show_header=True, header_style="bold")
+    runs_table.add_column("Group", justify="center", width=6)
+    runs_table.add_column("Per-Run Step", overflow="fold")
+    for group in groups:
+        runs_table.add_row(group, group_run_steps.get(group, "-"))
     active_table = Table(expand=True, show_header=True, header_style="bold")
-    active_table.add_column("Task", width=24)
+    active_table.add_column("Task", width=26)
     active_table.add_column("Status", width=10)
-    active_table.add_column("Step", width=10, justify="right")
+    active_table.add_column("Step", width=12, justify="right")
     active_table.add_column("Rate", width=8, justify="right")
     active_table.add_column("Try", width=5, justify="right")
     active_rows = [
@@ -203,7 +344,7 @@ def _render_formal_batch_rich(
             int(item.get("rep", 0)),
         )
     )
-    for item in active_rows[:6]:
+    for item in active_rows[:10]:
         status = str(item.get("status"))
         style = "blue"
         if status == "retrying":
@@ -226,9 +367,12 @@ def _render_formal_batch_rich(
             events_table.add_row(event)
     else:
         events_table.add_row("no recent events")
-    footer = f"progress={completion}/{total_runs}"
+    footer = (
+        f"progress={completion}/{total_runs} | "
+        "legend: ✓ done  ✗ failed  ▶ running  ↻ retrying  … starting  · queued"
+    )
     return Panel(
-        Group(header, overview, group_table, active_table, events_table, footer),
+        Group(header, overview, group_table, runs_table, active_table, events_table, footer),
         title="Batch UI",
         border_style="cyan",
     )
@@ -311,6 +455,11 @@ def run_one(
             writer.writeheader()
             if trace_rows:
                 writer.writerows(trace_rows)
+    adoption_timeline = _build_adoption_timeline(model, config.n_agents)
+    adoption_checkpoints = _build_adoption_checkpoints(adoption_timeline, every_steps=10)
+    t10_step = _first_step_at_rate(adoption_timeline, threshold=0.10)
+    t50_step = _first_step_at_rate(adoption_timeline, threshold=0.50)
+    auc_adoption = _compute_adoption_auc(adoption_timeline, n_steps=config.n_steps)
     result = {
         "group": config.group,
         "seed": config.seed,
@@ -325,6 +474,11 @@ def run_one(
         "wom_usage": metrics["wom_usage"],
         "bootstrap_usage": metrics.get("bootstrap_usage", {"initial_innovators": 0}),
         "llm_usage": metrics["llm_usage"],
+        "adoption_timeline": adoption_timeline,
+        "adoption_checkpoints": adoption_checkpoints,
+        "t10_step": t10_step,
+        "t50_step": t50_step,
+        "auc_adoption": auc_adoption,
     }
     total_elapsed = time.perf_counter() - started_at
     result["elapsed_seconds"] = round(total_elapsed, 2)
@@ -375,7 +529,9 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
     failed: list[dict[str, Any]] = []
     recent_events: list[str] = []
     state_lock = threading.Lock()
+    event_log_lock = threading.Lock()
     started_at = time.perf_counter()
+    event_log_path = results_dir / "batch_events.jsonl"
     task_states: dict[str, dict[str, Any]] = {}
     for group, rep, seed in tasks:
         key = f"{group}:{rep}:{seed}"
@@ -392,8 +548,29 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
             "n_agents": int(args.n_agents or 0),
             "rate": 0.0,
             "elapsed": 0.0,
+            "model_calls": 0,
+            "total_tokens": 0,
             "error": "",
+            "last_event_step": -1,
         }
+
+    def _append_event(event: dict[str, Any]) -> None:
+        payload = dict(event)
+        payload["ts"] = round(time.time(), 3)
+        with event_log_lock:
+            with event_log_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    _append_event(
+        {
+            "event": "batch_start",
+            "groups": list(args.groups),
+            "repetitions": int(args.repetitions),
+            "workers": int(workers),
+            "n_agents": int(args.n_agents or 0),
+            "n_steps": int(args.n_steps or 0),
+        }
+    )
 
     def _retry_sleep_seconds(attempt_index: int) -> float:
         base = cast(float, args.retry_backoff_seconds)
@@ -414,8 +591,19 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                 current["status"] = "starting" if attempt == 0 else "retrying"
                 current["attempt"] = attempt + 1
                 current["error"] = ""
+            _append_event(
+                {
+                    "event": "run_start",
+                    "group": group,
+                    "rep": rep,
+                    "seed": seed,
+                    "attempt": attempt + 1,
+                }
+            )
 
             def _on_progress(event: dict[str, Any]) -> None:
+                should_log_event = False
+                event_payload: dict[str, Any] | None = None
                 with state_lock:
                     current = task_states[key]
                     current["status"] = "running"
@@ -425,6 +613,26 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     current["n_agents"] = int(event.get("n_agents", current["n_agents"]))
                     current["rate"] = float(event.get("rate", current["rate"]))
                     current["elapsed"] = float(event.get("elapsed", current["elapsed"]))
+                    step_now = int(current["step"])
+                    n_steps_now = int(current["n_steps"])
+                    if step_now > int(current["last_event_step"]) and (
+                        step_now % 10 == 0 or step_now >= n_steps_now
+                    ):
+                        current["last_event_step"] = step_now
+                        should_log_event = True
+                        event_payload = {
+                            "event": "run_progress",
+                            "group": group,
+                            "rep": rep,
+                            "seed": seed,
+                            "step": step_now,
+                            "n_steps": n_steps_now,
+                            "rate": round(float(current["rate"]), 6),
+                            "adopters": int(current["adopters"]),
+                            "elapsed": round(float(current["elapsed"]), 3),
+                        }
+                if should_log_event and event_payload is not None:
+                    _append_event(event_payload)
             try:
                 cfg = build_config(group, seed, args.n_agents, args.n_steps, args.timeout_seconds)
                 raw_path = raw_dir / f"simulation_{cfg.group}_{rep}.csv"
@@ -446,7 +654,26 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     "result": result,
                     "raw_file": str(raw_path),
                 }
+                timeline_path = results_dir / f"adoption_timeline_{cfg.group}_{rep}.csv"
+                with timeline_path.open("w", encoding="utf-8", newline="") as timeline_file:
+                    writer = csv.DictWriter(
+                        timeline_file,
+                        fieldnames=["step", "total_adopters", "adoption_rate", "is_checkpoint"],
+                    )
+                    writer.writeheader()
+                    checkpoint_rows = cast(list[dict[str, Any]], result["adoption_checkpoints"])
+                    checkpoint_steps = {int(item["step"]) for item in checkpoint_rows}
+                    for item in cast(list[dict[str, Any]], result["adoption_timeline"]):
+                        writer.writerow(
+                            {
+                                "step": int(item["step"]),
+                                "total_adopters": int(item["total_adopters"]),
+                                "adoption_rate": float(item["adoption_rate"]),
+                                "is_checkpoint": int(item["step"]) in checkpoint_steps,
+                            }
+                        )
                 metrics_path = results_dir / f"metrics_{cfg.group}_{rep}.json"
+                metrics_payload["adoption_timeline_file"] = str(timeline_path)
                 metrics_path.write_text(
                     json.dumps(metrics_payload, ensure_ascii=False, indent=2),
                     encoding="utf-8",
@@ -459,6 +686,9 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     "n_steps": cfg.n_steps,
                     "model": model_slug,
                     "final_adoption_rate": result["final_adoption_rate"],
+                    "t10_step": result["t10_step"],
+                    "t50_step": result["t50_step"],
+                    "auc_adoption": result["auc_adoption"],
                     "total_adopters": result["total_adopters"],
                     "model_calls": result["llm_usage"]["model_calls"],
                     "prompt_tokens": result["llm_usage"]["prompt_tokens"],
@@ -466,6 +696,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     "total_tokens": result["llm_usage"]["total_tokens"],
                     "elapsed_seconds": result["elapsed_seconds"],
                     "raw_file": str(raw_path),
+                    "adoption_timeline_file": str(timeline_path),
                     "metrics_file": str(metrics_path),
                     "attempt": attempt + 1,
                 }
@@ -478,6 +709,8 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     current["n_agents"] = int(cfg.n_agents)
                     current["rate"] = float(result["final_adoption_rate"])
                     current["elapsed"] = float(result["elapsed_seconds"])
+                    current["model_calls"] = int(result["llm_usage"]["model_calls"])
+                    current["total_tokens"] = int(result["llm_usage"]["total_tokens"])
                 return row
             except Exception as exc:
                 last_exc = exc
@@ -495,6 +728,17 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                         if len(recent_events) > 8:
                             del recent_events[:-8]
                 if attempt >= attempts_total - 1 or not retriable:
+                    _append_event(
+                        {
+                            "event": "run_error",
+                            "group": group,
+                            "rep": rep,
+                            "seed": seed,
+                            "attempt": attempt + 1,
+                            "error": message[:240],
+                            "retriable": bool(retriable),
+                        }
+                    )
                     raise
                 sleep_seconds = _retry_sleep_seconds(attempt)
                 if sleep_seconds > 0:
@@ -515,6 +759,19 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                 recent_events.append(event)
                 if len(recent_events) > 8:
                     del recent_events[:-8]
+            _append_event(
+                {
+                    "event": "run_done",
+                    "group": group,
+                    "rep": rep,
+                    "seed": seed,
+                    "final_adoption_rate": round(float(row["final_adoption_rate"]), 6),
+                    "t10_step": row["t10_step"],
+                    "t50_step": row["t50_step"],
+                    "auc_adoption": row["auc_adoption"],
+                    "elapsed_seconds": round(float(row["elapsed_seconds"]), 3),
+                }
+            )
         except Exception as exc:
             with state_lock:
                 current = task_states[key]
@@ -523,6 +780,15 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                 recent_events.append(f"failed {group}-r{rep}-s{seed} err={str(exc)[:90]}")
                 if len(recent_events) > 8:
                     del recent_events[:-8]
+            _append_event(
+                {
+                    "event": "run_failed",
+                    "group": group,
+                    "rep": rep,
+                    "seed": seed,
+                    "error": str(exc)[:240],
+                }
+            )
             failed.append(
                 {
                     "group": group,
@@ -644,6 +910,9 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
         "n_steps",
         "model",
         "final_adoption_rate",
+        "t10_step",
+        "t50_step",
+        "auc_adoption",
         "total_adopters",
         "model_calls",
         "prompt_tokens",
@@ -651,6 +920,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
         "total_tokens",
         "elapsed_seconds",
         "raw_file",
+        "adoption_timeline_file",
         "metrics_file",
         "attempt",
     ]
@@ -666,6 +936,16 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
         "total_tokens": sum(int(row["total_tokens"]) for row in rows),
     }
     elapsed_total = sum(float(row["elapsed_seconds"]) for row in rows)
+    _append_event(
+        {
+            "event": "batch_done",
+            "total_runs": len(tasks),
+            "success_runs": len(rows),
+            "failed_runs": len(failed),
+            "elapsed_seconds_total": round(elapsed_total, 2),
+            "summary_file": str(summary_path),
+        }
+    )
     return {
         "mode": "formal_batch",
         "groups": args.groups,
@@ -679,6 +959,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
         "summary_file": str(summary_path),
         "usage_totals": usage_totals,
         "elapsed_seconds_total": round(elapsed_total, 2),
+        "event_log_file": str(event_log_path),
     }
 
 

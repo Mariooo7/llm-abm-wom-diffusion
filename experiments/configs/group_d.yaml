@@ -21,7 +21,7 @@ wom:
 # Bass 模型参数
 bass:
   innovation_coef: 0.003  # p
-  imitation_coef: 0.08    # q
+  imitation_coef: 0.095   # q
 
 # 仿真配置
 simulation:

@@ -52,7 +52,7 @@ thesis-diffusion-simulation/
 - 默认 `use_llm: true`，且 `llm_sampling_ratio=1.0`
 - 默认 `n_nodes: 100`，对齐论文目标实验规模
 - 默认 `avg_degree: 6`，用于降低强组过快饱和风险
-- 默认 `p=0.003`（四组统一），`q=0.12` (A/C) / `0.08` (B/D)，并启用 `round(N*p)` 初始创新者机制
+- 默认 `p=0.003`（四组统一），`q=0.12` (A/C) / `0.095` (B/D)，并启用 `round(N*p)` 初始创新者机制
 - 模型参数单一来源：`.env`（`LLM_PROVIDER/LLM_MODEL/LLM_BASE_URL/LLM_TEMPERATURE/LLM_REQUEST_TIMEOUT_SECONDS`）
 - 调度参数单一来源：`scripts/run_batch.sh` 默认值与命令行覆盖（`REPETITION_WORKERS/RUN_RETRIES/LLM_MAX_INFLIGHT/TIMEOUT_SECONDS/LLM_DECISION_RETRY_ATTEMPTS/LLM_DECISION_RETRY_BACKOFF_SECONDS/UI_REFRESH_SECONDS`）
 - 统一兼容地址：`LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1`

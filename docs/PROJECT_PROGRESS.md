@@ -5,8 +5,40 @@
 - 共识：不改变研究语义，只做不影响因果解释的工程优化
 - 目标：以可复现、可统计检验、可追溯成本的方式启动正式实验
 
+## 本轮推进（2026-03-16）
+- UI 可用性增强（保持原布局）：
+  - `formal_batch` 分组面板新增持续动态指标：`Rate μ/max`、`Calls(done)`
+  - 非交互终端的 `compact` 摘要同步增加分组 `r=均值/最大`、`c=累计调用`，避免仅看进度条
+  - 代码位置：`python/run_preflight.py`
+- 高并发稳定性与最优参数探测：
+  - `concurrency_sweep`（group=A，2~10，并发每档 2 轮）全部成功，`stable_max_no_failure=10`
+  - `formal_batch` 实测（A/B/C/D）：
+    - 4 runs（12 agents × 6 steps）：workers=3 `real=133.03s`；workers=4 `real=81.47s`
+    - 8 runs（10 agents × 4 steps）：workers=4 `real=84.35s`；workers=5 `real=92.46s`；workers=6 `real=98.91s`
+  - 结论：当前环境下 `REPETITION_WORKERS=4` 为稳定最优默认值
+- 更大规模小重复验证（24 agents × 12 steps，repetitions=3）：
+  - 路径：`data/results/trend_check_large_20260316_130541/batch_summary.csv`
+  - 完成：12/12 成功，0 失败，`real=879.87s`
+  - 分组均值：A=0.8611，B=0.0417，C=0.5833，D=0.0694（保持 A/C 高于 B/D）
+  - 观察：D 组仍是主要长尾来源，后续正式批次需重点关注 D 组耗时波动
+
+## 工程扫描与清理（2026-03-17）
+- 范围：日志输出、过程记录、结果落盘、脚本有效性、空目录与无效历史产物
+- 记录增强（`python/run_preflight.py`）：
+  - `formal_batch` 增加批次事件日志 `batch_events.jsonl`（`batch_start/run_start/run_progress/run_done/run_failed/batch_done`）
+  - 过程曲线落盘 `adoption_timeline_*.csv`，包含每步采纳率并标注 `is_checkpoint`（默认每 10 步与最终步）
+  - 批次汇总新增速度与过程指标：`t10_step`、`t50_step`、`auc_adoption`
+  - 汇总索引新增 `adoption_timeline_file`，便于从 `batch_summary.csv` 追溯到单 run 过程轨迹
+- 脚本与文档一致性修复：
+  - `scripts/run_batch.sh` 默认并行恢复并固定为 `REPETITION_WORKERS=4`
+  - 批量脚本结束摘要改为打印实际输出路径：`batch_summary.csv`、`metrics_*.json`、`adoption_timeline_*.csv`、`batch_events.jsonl`、`simulation_*.csv`
+  - 清理文档中的失效引用（如已删除的 `main.py`、不存在的 `scripts/analyze_results.py`、过期目录结构）
+- 资产清理原则：
+  - 仅清理空目录与无引用失效项，不删除任何非空正式实验输出目录
+  - 不触碰进行中实验目录与其日志文件，避免影响正式实验链路
+
 ## 当前生效基线（2026-03-13）
-- 当前正式基线参数：A/C `p=0.003, q=0.12`；B/D `p=0.003, q=0.08`
+- 当前正式基线参数：A/C `p=0.003, q=0.12`；B/D `p=0.003, q=0.095`
 - 当前 WOM 机制：离线语料分桶 + 每步传播 + `memory_limit=5`
 - 当前冷启动机制：`round(N*p)` 初始创新者，且 `p>0` 时至少 1 人
 - 当前说明口径：本文件中更早的校准小节保留为历史过程，不作为当前生效参数

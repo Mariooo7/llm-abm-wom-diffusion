@@ -42,7 +42,8 @@ thesis-diffusion-simulation/
 │   │   ├── __init__.py
 │   │   └── model.py           # DiffusionModel
 │   ├── networks/               # 网络生成 (NetworkX)
-│   ├── analysis/               # 数据分析
+│   ├── llm/                    # LLM 决策客户端
+│   ├── config/                 # 配置解析
 │   └── requirements.txt        # Python 依赖
 │
 ├── go/                         # Go LLM 网关模块
@@ -50,10 +51,8 @@ thesis-diffusion-simulation/
 │   │   └── main.go            # /decide HTTP 服务入口
 │   └── go.mod                 # Go 模块配置
 │
-├── experiments/                # 实验配置与结果
-│   ├── configs/               # 实验配置文件
-│   ├── results/               # 实验结果
-│   └── logs/                  # 运行日志
+├── experiments/                # 实验配置
+│   └── configs/               # 实验配置文件
 │
 ├── data/                       # 数据目录
 │   ├── raw/                   # 原始仿真数据
@@ -137,18 +136,18 @@ Windows PowerShell:
 ```powershell
 cd thesis-diffusion-simulation
 $runTag = "formal_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-$env:REPETITION_WORKERS="10"
+$env:REPETITION_WORKERS="4"
 $env:TIMEOUT_SECONDS="210"
 $env:RUN_RETRIES="2"
 $env:RETRY_BACKOFF_SECONDS="3"
 $env:LLM_MAX_INFLIGHT="50"
-uv run python python/run_preflight.py --mode formal_batch --groups A B C D --repetitions 15 --seed-start 12001 --repetition-workers 10 --run-retries 2 --retry-backoff-seconds 3 --timeout-seconds 210 --log-interval 10 --output-dir "data/results/$runTag" --raw-dir "data/raw/$runTag" --summary-file "data/results/$runTag/batch_summary.csv"
+uv run python python/run_preflight.py --mode formal_batch --groups A B C D --repetitions 15 --seed-start 12001 --repetition-workers 4 --run-retries 2 --retry-backoff-seconds 3 --timeout-seconds 210 --log-interval 10 --output-dir "data/results/$runTag" --raw-dir "data/raw/$runTag" --summary-file "data/results/$runTag/batch_summary.csv"
 ```
 
 可选运行时覆盖变量（建议在命令行设置，不建议写入 `.env`）:
 
 ```bash
-REPETITION_WORKERS=10
+REPETITION_WORKERS=4
 TIMEOUT_SECONDS=210
 RUN_RETRIES=2
 RETRY_BACKOFF_SECONDS=3
@@ -161,13 +160,16 @@ UI_REFRESH_SECONDS=1
 运行完成后，结果默认落在带时间戳目录中：
 - `data/results/formal_时间戳/batch_summary.csv`
 - `data/results/formal_时间戳/metrics_*.json`
+- `data/results/formal_时间戳/adoption_timeline_*.csv`
+- `data/results/formal_时间戳/batch_events.jsonl`
 - `data/raw/formal_时间戳/simulation_*.csv`
 
 `formal_batch` 运行中会每秒刷新终端看板，实时显示总览与分组进度：
 - 总览：`queued / running / retrying / done / failed`
-- 分组：每组完成数、步数进度条、活跃任务数与失败数
+- 分组：每组完成数、步数进度条、`Rate μ/max`、`Calls(done)`、活跃任务数与失败数
 - 活跃任务：最多显示 4 条，包含 `group/rep/seed/step/rate/try`
 - 默认使用 Rich Live 原地刷新，不刷屏；若非交互终端会自动回退 `compact` 摘要输出
+- 当前并发建议：`REPETITION_WORKERS=4` 作为稳定默认值；继续提高通常会增加长尾抖动
 
 run 内部默认启用“失败点续跑”（单步决策级重试）：
 - 当某个 agent 决策调用出现可重试错误时，优先在当前 step 内局部重试
@@ -220,7 +222,7 @@ go run cmd/main.go
 | T | 60 | 仿真步数 |
 | p | 0.003 | 创新系数 (Bass 模型，四组一致) |
 | q(强组) | 0.12 | 模仿系数 (A/C) |
-| q(弱组) | 0.08 | 模仿系数 (B/D) |
+| q(弱组) | 0.095 | 模仿系数 (B/D) |
 | emotion_arousal(强组) | 0.25 | 口碑情绪唤醒度 (A/C) |
 | emotion_arousal(弱组) | 0.10 | 口碑情绪唤醒度 (B/D) |
 | K | 6 | 网络平均度数 |
@@ -281,11 +283,11 @@ go run cmd/main.go
   - 强组在正式规模下仍可能 10~18 步内饱和，最终采纳率存在上限效应风险
   - 弱组更容易触发超时，正式实验前需先确保 B/D 稳定可跑完
 
-### 运行参数更新（2026-03-11）
+### 运行参数更新（2026-03-16）
 
 - 网络平均度：四组统一 `avg_degree: 6`（由 8 下调），用于降低早期扩散过快带来的天花板效应
 - YAML LLM 超时：四组统一 `timeout_seconds: 180`
-- 批量脚本默认：`REPETITION_WORKERS=3`、`TIMEOUT_SECONDS=210`
+- 批量脚本默认：`REPETITION_WORKERS=4`、`TIMEOUT_SECONDS=210`
 - 批量脚本保护：当 `REPETITION_WORKERS > LLM_MAX_INFLIGHT` 时自动下调到 `LLM_MAX_INFLIGHT`
 - 预实验脚本：`scripts/run_pilot.sh` 现已对齐批量脚本，自动加载 `.env` 并检查 `LLM_API_KEY` 与 `go`
 
@@ -345,7 +347,7 @@ go run cmd/main.go
 
 ```bash
 # Python 静态检查
-uv run ruff check python scripts main.py
+uv run ruff check python
 uv run mypy python
 
 # Go 测试
