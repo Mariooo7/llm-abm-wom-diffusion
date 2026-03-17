@@ -101,7 +101,7 @@ echo "  LLM 超时秒数：$TIMEOUT_SECONDS"
 echo "  LLM 最大并发请求：$LLM_MAX_INFLIGHT"
 echo "  单步决策重试次数：$LLM_DECISION_RETRY_ATTEMPTS"
 echo "  单步重试退避起始秒数：$LLM_DECISION_RETRY_BACKOFF_SECONDS"
-echo "  终端 UI 模式：live（自动降级 compact）"
+echo "  终端 UI 模式：live（非交互终端自动降级 quiet 进度）"
 echo "  UI 刷新秒数：$UI_REFRESH_SECONDS"
 echo ""
 

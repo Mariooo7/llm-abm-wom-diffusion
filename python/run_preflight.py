@@ -280,14 +280,14 @@ def _render_formal_batch_rich(
         f"[green]done[/] {counts['done']}",
         f"[red]failed[/] {counts['failed']}",
     )
-    group_table = Table(expand=True, show_header=True, header_style="bold")
+    group_table = Table(expand=True, show_header=True, header_style="bold", box=None)
     group_table.add_column("Group", justify="center", width=6)
-    group_table.add_column("Runs", justify="center", width=10)
-    group_table.add_column("Step μ/max", justify="center", width=21)
-    group_table.add_column("Adopt μ/max", justify="center", width=14)
-    group_table.add_column("Calls(done)", justify="center", width=12)
-    group_table.add_column("Active", justify="center", width=7)
-    group_table.add_column("Fail", justify="center", width=6)
+    group_table.add_column("Runs", justify="left", width=16)
+    group_table.add_column("Step (μ/max)", justify="left", width=20)
+    group_table.add_column("Adopt (μ/max)", justify="right", width=14)
+    group_table.add_column("Calls", justify="right", width=10)
+    group_table.add_column("Active", justify="right", width=8)
+    group_table.add_column("Fail", justify="right", width=6)
     group_run_steps: dict[str, str] = {}
     for group in groups:
         per_group = [v for v in states.values() if str(v.get("group")) == group]
@@ -300,6 +300,7 @@ def _render_formal_batch_rich(
             if str(v.get("status")) in {"running", "retrying", "starting"}
         )
         max_step = max((int(v.get("step", 0)) for v in per_group), default=0)
+        mean_step = sum(int(v.get("step", 0)) for v in per_group) / max(1, group_total)
         n_steps = max((int(v.get("n_steps", 0)) for v in per_group), default=0)
         rates = [float(v.get("rate", 0.0)) for v in per_group]
         rate_mean = sum(rates) / len(rates) if rates else 0.0
@@ -310,23 +311,24 @@ def _render_formal_batch_rich(
             if str(v.get("status")) == "done"
         )
         group_run_steps[group] = _format_group_run_steps(per_group, max_items=None)
-        runs_bar = _format_bar(done_count, group_total if group_total > 0 else 1, width=12)
-        step_bar = _format_bar(max_step, n_steps if n_steps > 0 else 1, width=14)
+        runs_bar = _format_bar(done_count, group_total if group_total > 0 else 1, width=10)
+        step_bar = _format_bar(int(round(mean_step)), n_steps if n_steps > 0 else 1, width=12)
+        runs_color = "green" if done_count == group_total else "white"
         group_table.add_row(
-            group,
-            f"{runs_bar} {done_count}/{group_total}",
-            f"{step_bar} {max_step}/{n_steps}",
-            f"{rate_mean:.3f}/{rate_max:.3f}",
+            f"[bold]{group}[/]",
+            f"[{runs_color}]{runs_bar}[/] {done_count}/{group_total}",
+            f"[cyan]{step_bar}[/] {int(mean_step)}/{max_step}",
+            f"{rate_mean:.3f} / {rate_max:.3f}",
             str(calls_done),
-            str(active),
-            str(fail_count),
+            f"[{'blue' if active > 0 else 'dim'}]{active}[/]",
+            f"[{'red' if fail_count > 0 else 'dim'}]{fail_count}[/]",
         )
-    runs_table = Table(expand=True, show_header=True, header_style="bold")
+    runs_table = Table(expand=True, show_header=True, header_style="bold", box=None)
     runs_table.add_column("Group", justify="center", width=6)
     runs_table.add_column("Per-Run Step", overflow="fold")
     for group in groups:
-        runs_table.add_row(group, group_run_steps.get(group, "-"))
-    active_table = Table(expand=True, show_header=True, header_style="bold")
+        runs_table.add_row(f"[bold]{group}[/]", group_run_steps.get(group, "-"))
+    active_table = Table(expand=True, show_header=True, header_style="bold", box=None)
     active_table.add_column("Task", width=26)
     active_table.add_column("Status", width=10)
     active_table.add_column("Step", width=12, justify="right")
@@ -360,10 +362,10 @@ def _render_formal_batch_rich(
         )
     if not active_rows:
         active_table.add_row("-", "-", "-", "-", "-")
-    events_table = Table(expand=True, show_header=True, header_style="bold")
-    events_table.add_column("Recent Events")
+    events_table = Table(expand=True, show_header=True, header_style="bold", box=None)
+    events_table.add_column("Recent Events", style="dim")
     if recent_events:
-        for event in recent_events[-6:]:
+        for event in recent_events[-5:]:
             events_table.add_row(event)
     else:
         events_table.add_row("no recent events")
@@ -372,9 +374,24 @@ def _render_formal_batch_rich(
         "legend: ✓ done  ✗ failed  ▶ running  ↻ retrying  … starting  · queued"
     )
     return Panel(
-        Group(header, overview, group_table, runs_table, active_table, events_table, footer),
-        title="Batch UI",
+        Group(
+            header,
+            "",
+            overview,
+            "",
+            group_table,
+            "",
+            runs_table,
+            "",
+            active_table,
+            "",
+            events_table,
+            "",
+            footer
+        ),
+        title="Batch Live Dashboard",
         border_style="cyan",
+        padding=(1, 2)
     )
 
 
@@ -515,7 +532,10 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
     results_dir = (project_root / args.output_dir).resolve()
     raw_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
-    summary_path = (project_root / args.summary_file).resolve()
+    if args.summary_file:
+        summary_path = (project_root / args.summary_file).resolve()
+    else:
+        summary_path = (results_dir / "batch_summary.csv").resolve()
     summary_path.parent.mkdir(parents=True, exist_ok=True)
 
     tasks: list[tuple[str, int, int]] = []
@@ -802,7 +822,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
     use_live_ui = RICH_AVAILABLE and sys.stdout.isatty()
     if not use_live_ui:
         reason = "rich 不可用" if not RICH_AVAILABLE else "终端非交互模式"
-        print(f"[ui] 已回退为 compact 模式: {reason}", flush=True)
+        print(f"[ui] 已切换为 quiet 进度模式: {reason}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         future_to_task = {
@@ -856,50 +876,22 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                 )
         else:
             last_completion = -1
-            last_rendered_at = 0.0
-            render_interval = max(4.0, refresh_seconds * 4)
             for future in as_completed(future_to_task):
                 _consume_future_result(future, future_to_task)
                 with state_lock:
                     snapshot = _make_snapshot(task_states)
-                    events_snapshot = list(recent_events)
                 counts = _status_counts(snapshot)
                 completion = counts["done"] + counts["failed"]
-                now = time.perf_counter()
-                should_render = (
-                    completion != last_completion
-                    or now - last_rendered_at >= render_interval
-                    or completion >= len(tasks)
-                )
-                if should_render:
+                if completion != last_completion:
                     print(
-                        _render_formal_batch_compact(
-                            snapshot,
-                            list(args.groups),
-                            len(tasks),
-                            started_at,
-                            events_snapshot,
+                        (
+                            f"[progress] completed={completion}/{len(tasks)} "
+                            f"done={counts['done']} failed={counts['failed']} "
+                            f"running={counts['running']} queued={counts['queued']}"
                         ),
                         flush=True,
                     )
                     last_completion = completion
-                    last_rendered_at = now
-            with state_lock:
-                snapshot = _make_snapshot(task_states)
-                events_snapshot = list(recent_events)
-            final_counts = _status_counts(snapshot)
-            final_completion = final_counts["done"] + final_counts["failed"]
-            if final_completion != last_completion:
-                print(
-                    _render_formal_batch_compact(
-                        snapshot,
-                        list(args.groups),
-                        len(tasks),
-                        started_at,
-                        events_snapshot,
-                    ),
-                    flush=True,
-                )
 
     rows.sort(key=lambda item: (str(item["group"]), int(item["rep"])))
     fieldnames = [
@@ -1201,7 +1193,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ui-refresh-seconds", type=float, default=1.0)
     parser.add_argument("--output-dir", default="data/results")
     parser.add_argument("--raw-dir", default="data/raw")
-    parser.add_argument("--summary-file", default="data/results/batch_summary.csv")
+    parser.add_argument("--summary-file", default=None)
     return parser.parse_args()
 
 
