@@ -122,13 +122,13 @@ def generate_network(
 def compute_network_metrics(G: nx.Graph) -> dict
 ```
 
-### python/analysis/
+### data/results/（分析输入）
 
 **核心功能**:
-- 扩散曲线拟合 (Bass 模型)
-- 统计检验 (ANOVA, t-test)
-- 效应量计算 (Cohen's d, η²)
-- 可视化 (matplotlib/seaborn)
+- 汇总索引：`batch_summary.csv`
+- 单 run 指标：`metrics_*.json`
+- 过程曲线：`adoption_timeline_*.csv`
+- 批次事件日志：`batch_events.jsonl`
 
 ---
 
