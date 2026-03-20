@@ -1,7 +1,7 @@
 # 毕业论文仿真实验项目
 
 **论文题目**: 基于大模型智能体的新产品扩散机制研究：网络结构与口碑语义的交互效应
-**作者**: maorui1
+**作者**: 茅睿 (Mariooo7)
 
 **技术栈**: Go (并发调度与网关) + Python (Mesa ABM 引擎) 混合架构
 
@@ -124,50 +124,6 @@ bash scripts/run_experiment.sh
 - Monte Carlo 重复次数: 15
 
 *说明：`initial_seed_ratio` 用于控制开局的冷启动火种数量，与自发创新概率 $p$ 实现物理隔离，保证方差收敛。*
-- 校准原则：保持 2×2 因子设计不变，只调整研究参数，不改研究语义与调度机制
-- 证据摘要：
-  - A 组（30 agents, 12 steps）：`final_adoption_rate=1.0`
-  - C 组（30 agents, 12 steps）：`final_adoption_rate=1.0`
-  - B 组（30 agents, 12 steps）：`final_adoption_rate=0.1333`
-  - D 组：早期进度显示低采纳（step=3 时为 0），按你的要求停止重试
-- 无重试复核（20 agents, 8 steps, seed=13101）：
-  - A=0.90，B=0.45，C=0.95，D=0.05
-- 强组补充复核（A/C 两次种子，20 agents, 8 steps）：
-  - A 组均值=1.00（2/2 饱和）
-  - C 组均值=0.825（0.70~0.95）
-- 调参动作：
-  - 统一下调创新项：`p 0.003 -> 0.001`，降低外生采纳噪声
-  - 强组降温：`emotion_arousal 0.25 -> 0.20`，`q 0.12 -> 0.10`
-  - 弱组回调：`emotion_arousal 0.10 -> 0.12`，`q 0.08 -> 0.09`
-- 当前判断：强弱组分层已拉开，A 对 C 的结构优势可见，但 A 组仍偏快，正式批次需重点监控 t50 与早期斜率
-
-### 方案三：外生环境概率分布校准（2026-03-19）
-- 触发原因：强组极易“秒满”（天花板效应），弱组常年“贴底”（地板效应），之前的差异化 p/q 调整破坏了控制变量纯洁性。
-- 理论动作：采用“方案三（外生环境概率分布）”，通过环境中的信息极化比例控制扩散阻力，完全剔除提示词中的静态唤醒数值，让 LLM 纯靠文本阅读理解感知情感。
-- 最终配置：
-  - 全组统一：`p=0.003`, `q=0.10`, `share_multiplier=1.0`（消除个人性格混淆）。
-  - 强组（A/C）：`strength=strong`, `high_arousal_ratio=0.8`（80%为高唤醒激进文本）。
-  - 弱组（B/D）：`strength=weak`, `high_arousal_ratio=0.2`（仅20%为高唤醒猎奇文本，以此打破冷启动死锁）。
-
-### 正式规模试跑（2026-03-11）
-
-- 目的：在正式规模（100 agents × 60 steps）下同时验证参数形态与工程稳定性
-- 配置：A/B/C/D，repetitions=2，repetition_workers=4，timeout_seconds=180，run_retries=2
-- 结果（终端汇总）：
-  - 成功 4/8：A×2、C×2，均 `final_adoption_rate=1.0`
-  - 失败 4/8：B×2、D×2，均为 `gateway timeout: timed out`
-  - token 消耗（含失败）：total_tokens=882,440
-- 含义：
-  - 强组在正式规模下仍可能 10~18 步内饱和，最终采纳率存在上限效应风险
-  - 弱组更容易触发超时，正式实验前需先确保 B/D 稳定可跑完
-
-### 运行参数更新（2026-03-16）
-
-- 网络平均度：四组统一 `avg_degree: 6`（由 8 下调），用于降低早期扩散过快带来的天花板效应
-- YAML LLM 超时：四组统一 `timeout_seconds: 180`
-- 批量脚本默认：`REPETITION_WORKERS=4`、`TIMEOUT_SECONDS=210`
-- 批量脚本保护：当 `REPETITION_WORKERS > LLM_MAX_INFLIGHT` 时自动下调到 `LLM_MAX_INFLIGHT`
-- 预实验脚本：`scripts/run_pilot.sh` 现已对齐批量脚本，自动加载 `.env` 并检查 `LLM_API_KEY` 与 `go`
 
 ---
 
@@ -246,21 +202,17 @@ go test ./...
 
 ## 📚 相关文档
 
-- [项目上下文](../PROJECT_CONTEXT.md)
 - [CodeMap](docs/CODEMAP.md)
 - [项目进展](docs/PROJECT_PROGRESS.md)
-- [实验设计文档](../../04_实验设计/实验设计与分析流程_v1.0.md)
-- [文献综述](../../02_文献综述/文献综述_v1.0.md)
-- [技术栈调研](../../毕业论文_技术栈调研与执行计划.md)
-- [执行计划](../../毕业论文_仿真实验详细执行计划_v1.0.md)
+- [架构设计](docs/ARCHITECTURE.md)
 
 ---
 
 ## 👥 作者信息
 
-**作者**: 7mariooo (iu_roam)  
-**机构**: 上海临港绝影智能科技有限公司  
-**时间**: 2026 年 2 月
+**作者**: 茅睿 (Mariooo7 / IU_Roam)  
+**机构**: 浙江大学  
+**时间**: 2026 年 3 月
 
 ---
 
@@ -270,4 +222,4 @@ go test ./...
 
 ---
 
-*最后更新：2026-03-02*
+*最后更新：2026-03-20*
