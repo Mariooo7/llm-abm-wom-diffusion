@@ -79,3 +79,4 @@ htmlcov/
 # Documents (optional - can be committed if needed)
 docs/drafts/
 docs/notes/
+_local_meta/

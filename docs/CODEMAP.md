@@ -19,8 +19,7 @@ thesis-diffusion-simulation/
 │   ├── networks/generator.py
 │   └── requirements.txt
 ├── scripts/
-│   ├── run_pilot.sh
-│   └── run_batch.sh
+│   └── run_experiment.sh
 ├── data/
 │   ├── raw/
 │   ├── processed/
@@ -38,7 +37,6 @@ thesis-diffusion-simulation/
 - Go 决策网关入口：`go/cmd/main.go`
 - Go 请求/响应结构：`go/cmd/main.go` 中 `decisionRequest/decisionResponse`
 - Go 重试与超时策略：`go/cmd/main.go` 中 `runDecision` 与 `runtimeTimeout`
-- 预实验脚本：(已废弃，统一使用 run_experiment.sh)
 - 批量实验脚本：`scripts/run_experiment.sh`
 - 批量实验执行入口：`python/run_experiment.py`（`formal_batch` 支持实时看板）
 
@@ -51,9 +49,9 @@ thesis-diffusion-simulation/
 ## 5. 当前配置策略
 - 默认 `use_llm: true`，且 `llm_sampling_ratio=1.0`
 - 默认 `n_nodes: 100`，对齐论文目标实验规模
-- 默认 `avg_degree: 6`，用于降低强组过快饱和风险
-- 默认 `p=0.003`、`q=0.10`（四组统一），并启用 `round(N*p)` 初始创新者机制
-- WOM 采用“强度 + 高唤起占比”双字段：`strength=strong/weak`，`high_arousal_ratio=0.8` (A/C) / `0.2` (B/D)
+- 默认 `avg_degree: 8`
+- 默认 `p=0.003`、`q=0.20`（四组统一），并启用独立的 `initial_seed_ratio=0.04`
+- WOM 采用“强度 + 高唤起占比”双字段：`strength=strong/weak`，`high_arousal_ratio=0.6` (A/C) / `0.3` (B/D)
 - `share_multiplier=1.0`（四组统一）
 - 批次汇总新增 WOM 可观测列：`wom_strength/wom_bucket/wom_high_arousal_ratio/wom_messages_sent_high/wom_messages_sent_low`
 - 模型参数单一来源：`.env`（`LLM_PROVIDER/LLM_MODEL/LLM_BASE_URL/LLM_TEMPERATURE/LLM_REQUEST_TIMEOUT_SECONDS`）
@@ -76,23 +74,16 @@ thesis-diffusion-simulation/
 - 改配置字段映射：`python/config/settings.py`
 - 改 Python LLM 决策：`python/llm/decision_client.py`
 - 改 Go 决策网关策略：`go/cmd/main.go`
-- 改项目决策：`../PROJECT_CONTEXT.md`
 
-## 9. 文档职责分工
-- `README.md`：面向使用者的入口文档，给出运行方式和当前默认参数
-- `docs/ENV_SETUP.md`：环境搭建、`.env` 规范与常见问题排查
-- `docs/ARCHITECTURE.md`：研究语义边界与系统分层设计
-- `docs/PROJECT_PROGRESS.md`：阶段决策、参数调整证据与执行记录
-- 本文档 `docs/CODEMAP.md`：代码定位与“改哪里看哪里”的索引
-
-## 8. 教学式阅读入口
+## 7. 教学式阅读入口
 - 第一站（总流程）：`python/models/model.py`
 - 第二站（个体决策）：`python/agents/agent.py`
 - 第三站（网络影响）：`python/networks/generator.py`
 - 第四站（Go 决策请求与解析）：`go/cmd/main.go`
 - 第五站（Go 重试与容错）：`go/cmd/main.go`
 
-## 7. 学术依据定位
-- 实验设计：`../04_实验设计/实验设计与分析流程_v1.0.md`
-- 文献综述：`../02_文献综述/文献综述_v1.0.md`
-- 阅读笔记索引：`../03_阅读笔记/阅读笔记索引.md`
+## 8. 文档职责分工
+- `README.md`：面向使用者的入口文档，给出运行方式和当前默认参数
+- `docs/ENV_SETUP.md`：环境搭建、`.env` 规范与常见问题排查
+- `docs/ARCHITECTURE.md`：研究语义边界与系统分层设计
+- 本文档 `docs/CODEMAP.md`：代码定位与“改哪里看哪里”的索引

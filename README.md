@@ -203,8 +203,8 @@ go test ./...
 ## 📚 相关文档
 
 - [CodeMap](docs/CODEMAP.md)
-- [项目进展](docs/PROJECT_PROGRESS.md)
 - [架构设计](docs/ARCHITECTURE.md)
+- [环境配置指南](docs/ENV_SETUP.md)
 
 ---
 
