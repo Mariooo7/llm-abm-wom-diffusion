@@ -46,16 +46,17 @@ type tokenUsageSummary struct {
 // decisionRequest 是 Python 侧每次决策调用的输入快照。
 // 该结构的字段名直接用于 JSON 编解码，属于接口契约：改名会导致上游请求字段“静默丢失”。
 type decisionRequest struct {
-	AgentID        int      `json:"agent_id"`
-	Openness       float64  `json:"openness"`
-	RiskTolerance  float64  `json:"risk_tolerance"`
-	AdoptedRatio   float64  `json:"adopted_ratio"`
-	EmotionArousal float64  `json:"emotion_arousal"`
-	WOMStrength    string   `json:"wom_strength"`
-	WOMMessages    []string `json:"wom_messages"`
-	InnovationCoef float64  `json:"innovation_coef"`
-	ImitationCoef  float64  `json:"imitation_coef"`
-	ContextKey     string   `json:"context_key"`
+	AgentID             int      `json:"agent_id"`
+	Openness            float64  `json:"openness"`
+	RiskTolerance       float64  `json:"risk_tolerance"`
+	AdoptedRatio        float64  `json:"adopted_ratio"`
+	EmotionArousal      float64  `json:"emotion_arousal"`
+	WOMHighArousalRatio float64  `json:"wom_high_arousal_ratio"`
+	WOMStrength         string   `json:"wom_strength"`
+	WOMMessages         []string `json:"wom_messages"`
+	InnovationCoef      float64  `json:"innovation_coef"`
+	ImitationCoef       float64  `json:"imitation_coef"`
+	ContextKey          string   `json:"context_key"`
 }
 
 // decisionResponse 是网关对 Python 的返回结构。
@@ -205,7 +206,6 @@ func buildDecisionInstruction() string {
 		"3. 你面临的外部刺激 (social_context & wom_messages_recent)：",
 		"- adopted_ratio (0.0~1.0): 朋友圈中已购买该产品的人数比例。0.1代表刚起步，0.5代表已经普及。结合你的 imitation_coef，比例越高你的同侪压力越大。",
 		"- wom_messages_recent: 朋友发给你的真实评价原文。",
-		"- emotion_arousal (0.0~1.0): 朋友在推荐时的情绪唤醒度。0代表冷淡客观，1代表极其狂热。高唤醒度能瞬间提升你的购买冲动，但若你的 risk_tolerance 极低，你依然会保持警惕。",
 		"",
 		"【强制输出规范】",
 		"严禁输出任何Markdown标记（如```json）或多余解释。",
@@ -305,9 +305,7 @@ func buildDecisionQuery(req decisionRequest) string {
 			"risk_tolerance": req.RiskTolerance,
 		},
 		"social_context": map[string]any{
-			"adopted_ratio":   req.AdoptedRatio,
-			"wom_strength":    req.WOMStrength,
-			"emotion_arousal": req.EmotionArousal,
+			"adopted_ratio": req.AdoptedRatio,
 		},
 		"wom_messages_recent": req.WOMMessages,
 		"bass_params": map[string]any{

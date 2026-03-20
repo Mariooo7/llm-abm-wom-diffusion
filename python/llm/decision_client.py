@@ -46,11 +46,12 @@ class DecisionRequest:
 
     字段命名与 Go 网关的 decisionRequest 保持一致，避免两边各自“翻译”导致字段漂移。
     """
+
     agent_id: int
     openness: float
     risk_tolerance: float
     adopted_ratio: float
-    emotion_arousal: float
+    wom_high_arousal_ratio: float
     wom_strength: str
     wom_messages: list[str]
     innovation_coef: float
@@ -60,6 +61,7 @@ class DecisionRequest:
 @dataclass
 class DecisionResult:
     """单次决策输出（网关已保证 JSON 结构与概率范围）。"""
+
     adopt: bool
     probability: float
     reasoning: str
@@ -216,7 +218,7 @@ class DecisionClient:
             "openness": round(req.openness, 4),
             "risk_tolerance": round(req.risk_tolerance, 4),
             "adopted_ratio": round(req.adopted_ratio, 4),
-            "emotion_arousal": round(req.emotion_arousal, 4),
+            "wom_high_arousal_ratio": round(req.wom_high_arousal_ratio, 4),
             "wom_strength": req.wom_strength,
             "wom_messages": req.wom_messages[-5:],
             "innovation_coef": round(req.innovation_coef, 4),
@@ -278,10 +280,7 @@ class DecisionClient:
             return index, self.decide(task.req, task.context_key)
 
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [
-                pool.submit(_run_one, idx, task)
-                for idx, task in enumerate(tasks)
-            ]
+            futures = [pool.submit(_run_one, idx, task) for idx, task in enumerate(tasks)]
             for future in as_completed(futures):
                 idx, result = future.result()
                 results[idx] = result

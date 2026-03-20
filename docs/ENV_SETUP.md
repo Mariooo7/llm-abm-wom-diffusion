@@ -173,14 +173,13 @@ bash scripts/run_batch.sh
   LLM 最大并发请求：50
   单步决策重试次数：2
   单步重试退避起始秒数：1
-  终端 UI 模式：live（自动降级 compact）
   UI 刷新秒数：1
 ╭────────────────────────────────────── Batch UI ───────────────────────────────────────╮
 │ Formal Batch Live Board                              elapsed=8.0s  done=1/60 failed=0 │
 ╰───────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
-说明：默认启用 Rich Live 原地刷新，不会持续刷屏；非交互终端会自动回退到低频 `compact` 摘要输出。分组看板持续显示 `Rate μ/max` 与 `Calls(done)`，便于在运行中直接观察四组关键差异。批次会稳定落盘 `batch_summary.csv`、`metrics_*.json`、`adoption_timeline_*.csv`、`batch_events.jsonl` 与 `simulation_*.csv`。其中 `adoption_timeline_*.csv` 包含每步采纳率并标注 `is_checkpoint`（默认每 10 步 + 最终步）。单次 run 内决策失败会先在当前 step 局部重试（`LLM_DECISION_RETRY_ATTEMPTS`、`LLM_DECISION_RETRY_BACKOFF_SECONDS`），局部重试耗尽后才进入 run 级重试。当前批量建议从 `REPETITION_WORKERS=4` 起步。
+说明：默认启用 Rich Live 原地刷新，不会持续刷屏。分组看板持续显示 `Rate μ/max` 与 `Calls(done)`，便于在运行中直接观察四组关键差异。批次会稳定落盘 `batch_summary.csv`、`metrics_*.json`、`adoption_timeline_*.csv`、`batch_events.jsonl` 与 `simulation_*.csv`。其中 `adoption_timeline_*.csv` 包含每步采纳率并标注 `is_checkpoint`（默认每 10 步 + 最终步）。单次 run 内决策失败会先在当前 step 局部重试（`LLM_DECISION_RETRY_ATTEMPTS`、`LLM_DECISION_RETRY_BACKOFF_SECONDS`），局部重试耗尽后才进入 run 级重试。当前批量建议从 `REPETITION_WORKERS=4` 起步。
 
 ### Go 测试 (可选，单独排查时使用)
 

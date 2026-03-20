@@ -12,8 +12,7 @@ network:
 # 口碑语义配置
 wom:
   strength: "strong"  # strong | weak
-  emotion_arousal: 0.25  # 0-1
-  valence: "positive"
+  high_arousal_ratio: 0.6  # 0-1
   corpus_path: "data/wom/wom_corpus.csv"
   memory_limit: 5
   share_multiplier: 1.0
@@ -21,10 +20,11 @@ wom:
 # Bass 模型参数
 bass:
   innovation_coef: 0.003  # p
-  imitation_coef: 0.12    # q
+  imitation_coef: 0.20  # q
 
 # 仿真配置
 simulation:
+  initial_seed_ratio: 0.04
   n_steps: 60  # 简化：从 100 减少到 60，扩散曲线通常在 50-60 步达到稳定
   n_repetitions: 15  # 简化：从 20 减少到 15，ABM 标准建议 (Gilbert, 2008)
   seed: 42

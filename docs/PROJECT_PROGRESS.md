@@ -5,6 +5,19 @@
 - 共识：不改变研究语义，只做不影响因果解释的工程优化
 - 目标：以可复现、可统计检验、可追溯成本的方式启动正式实验
 
+## 参数校准记录（2026-03-17，B/D 脱底专项）
+- 背景：
+  - 运行观察显示 B 组在 20~30 步窗口仍有明显贴底风险，且继续上调 `q` 会压缩与 A/C 的构念边界
+- 本次调整（仅 B/D，保持 `share_multiplier=1.0` 不变）：
+  - `imitation_coef (q): 0.105 -> 0.10`
+  - `emotion_arousal: 0.12 -> 0.15`
+- 设计约束：
+  - 不新增处理维度，不调整网络参数，不改变强组参数
+  - 本轮归类为“校准实验”，用于验证弱组脱底可行性，不作为最终因果结论
+- 记录要求：
+  - 每次试跑需记录 `run_tag`、命令参数、输出目录与脱底判据（20/30 步内最终采纳率与中段斜率）
+  - 结果统一追溯 `batch_summary.csv`、`adoption_timeline_*.csv`、`simulation_*.csv`
+
 ## 本轮推进（2026-03-16）
 - UI 可用性增强（保持原布局）：
   - `formal_batch` 分组面板新增持续动态指标：`Rate μ/max`、`Calls(done)`
@@ -31,14 +44,15 @@
   - 汇总索引新增 `adoption_timeline_file`，便于从 `batch_summary.csv` 追溯到单 run 过程轨迹
 - 脚本与文档一致性修复：
   - `scripts/run_batch.sh` 默认并行恢复并固定为 `REPETITION_WORKERS=4`
+  - 统一批量脚本为单一路径：直接运行 `python/run_preflight.py`，移除 `script` 封装分支，降低终端兼容差异导致的刷屏概率
   - 批量脚本结束摘要改为打印实际输出路径：`batch_summary.csv`、`metrics_*.json`、`adoption_timeline_*.csv`、`batch_events.jsonl`、`simulation_*.csv`
   - 清理文档中的失效引用（如已删除的 `main.py`、不存在的 `scripts/analyze_results.py`、过期目录结构）
 - 资产清理原则：
   - 仅清理空目录与无引用失效项，不删除任何非空正式实验输出目录
   - 不触碰进行中实验目录与其日志文件，避免影响正式实验链路
 
-## 当前生效基线（2026-03-13）
-- 当前正式基线参数：A/C `p=0.003, q=0.12`；B/D `p=0.003, q=0.095`
+## 当前生效基线（2026-03-17）
+- 当前正式基线参数：A/C `p=0.003, q=0.12, emotion_arousal=0.25`；B/D `p=0.003, q=0.10, emotion_arousal=0.15`
 - 当前 WOM 机制：离线语料分桶 + 每步传播 + `memory_limit=5`
 - 当前冷启动机制：`round(N*p)` 初始创新者，且 `p>0` 时至少 1 人
 - 当前说明口径：本文件中更早的校准小节保留为历史过程，不作为当前生效参数
@@ -189,6 +203,36 @@
 - 系统运行参数暂时冻结：以稳定为先，不做非必要调优
 - 研究参数按学术规范确定：以理论机制、文献证据、研究问题为约束
 - 文档与代码必须一致：任何路径、参数、策略变更需同步更新文档
+
+## WOM 分桶策略升级（方案三，2026-03-19）
+- 触发问题：
+  - 固定阈值分桶（`emotion_arousal >= 0.5`）在当前校准路径下长期只命中 `strong_low/weak_low`，`strong_high/weak_high` 两桶利用不足
+  - 强组易天花板、弱组易贴底，导致结构效应窗口窄
+- 方案决策：
+  - 从“固定桶选择”切换为“环境概率分布抽样”
+  - 保持 `wom.strength` 作为处理变量（strong/weak）
+  - 新增 `wom.high_arousal_ratio` 作为每次分享时抽到 `*_high` 桶的概率
+  - 组别设定：A/C `high_arousal_ratio=0.8`，B/D `high_arousal_ratio=0.2`
+- 理论口径：
+  - 信息环境分布（而非单条消息）作为操纵对象，符合传播学中对情绪信息占比的处理路径
+  - 强/弱组差异由语义强度 + 高唤起消息占比共同体现，避免“全高或全低”的极端刺激
+  - 保留四桶语料并激活四桶使用，提升刺激材料利用率与方法可解释性
+- 参数冻结更新：
+  - 四组统一 `p=0.003`、`q=0.10`
+  - 四组统一 `share_multiplier=1.0`
+  - 强组（A/C）：`strength=strong`、`emotion_arousal=0.8`、`high_arousal_ratio=0.8`
+  - 弱组（B/D）：`strength=weak`、`emotion_arousal=0.2`、`high_arousal_ratio=0.2`
+- 代码变更范围：
+  - 配置映射：`python/config/settings.py` 新增 `wom_high_arousal_ratio`
+  - 传播逻辑：`python/models/model.py` 改为每次分享按概率选择 `high/low` 桶，并记录 high/low 发送计数
+  - 决策提示词：`go/cmd/main.go` 与 `python/llm/decision_client.py` 移除静态的 `emotion_arousal` 输入，让 LLM 纯靠阅读 WOM 文本感知情绪
+  - 输出可观测性：`python/run_preflight.py` 的 `batch_summary.csv` 新增 `wom_strength/wom_bucket/wom_high_arousal_ratio/messages_sent_high/messages_sent_low`
+  - 实验配置：`experiments/configs/group_{a,b,c,d}.yaml` 新增 `wom.high_arousal_ratio` 并统一 Bass 参数
+- 参考依据（写作引用候选）：
+  - Berger, J., & Milkman, K. L. (2012). What Makes Online Content Viral?
+  - Centola, D. (2010). The Spread of Behavior in an Online Social Network Experiment.
+  - Rogers, E. M. (2003). Diffusion of Innovations (5th ed.).
+  - Shadish, W. R., Cook, T. D., & Campbell, D. T. (2002). Experimental and Quasi-Experimental Designs.
 
 ## WOM 语料库与传播机制定稿（2026-03-12）
 - 定稿方案：采用“离线 LLM 生成 WOM 语料库 + 仿真内抽取传播”，不在仿真主循环中在线生成 WOM 文本

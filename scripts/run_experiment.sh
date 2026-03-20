@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# 批量实验运行脚本
-# 用途：运行 4 组 × 15 次 = 60 次正式实验
+# 统一实验运行脚本
+# 用途：支持正式批量实验（默认 4组×15次）与自定义预实验（通过环境变量覆盖）
 
 set -euo pipefail
 
-echo "🚀 开始批量实验 (Batch Experiment)"
+echo "🚀 开始实验 (Simulation Experiment)"
 echo "==================================="
 
 # 切换到项目目录
@@ -52,7 +52,14 @@ if ! command -v go >/dev/null 2>&1; then
 fi
 
 # 实验参数
-EXP_GROUPS=("A" "B" "C" "D")
+if [ -n "${EXP_GROUPS_OVERRIDE:-}" ]; then
+    read -ra EXP_GROUPS <<< "$EXP_GROUPS_OVERRIDE"
+    RUN_TAG_PREFIX="verify"
+else
+    EXP_GROUPS=("A" "B" "C" "D")
+    RUN_TAG_PREFIX="formal"
+fi
+
 REPETITIONS="${REPETITIONS:-15}"
 SEED_START="${SEED_START:-12001}"
 N_AGENTS="${N_AGENTS:-100}"
@@ -69,7 +76,7 @@ LLM_RETRY_JITTER_MS="${LLM_RETRY_JITTER_MS:-300}"
 LLM_DECISION_RETRY_ATTEMPTS="${LLM_DECISION_RETRY_ATTEMPTS:-2}"
 LLM_DECISION_RETRY_BACKOFF_SECONDS="${LLM_DECISION_RETRY_BACKOFF_SECONDS:-1}"
 UI_REFRESH_SECONDS="${UI_REFRESH_SECONDS:-1}"
-RUN_TAG="${RUN_TAG:-formal_$(date +%Y%m%d_%H%M%S)}"
+RUN_TAG="${RUN_TAG:-${RUN_TAG_PREFIX}_$(date +%Y%m%d_%H%M%S)}"
 OUTPUT_DIR="${OUTPUT_DIR:-data/results/$RUN_TAG}"
 RAW_DIR="${RAW_DIR:-data/raw/$RUN_TAG}"
 SUMMARY_FILE="${SUMMARY_FILE:-$OUTPUT_DIR/batch_summary.csv}"
@@ -82,7 +89,6 @@ fi
 mkdir -p "$OUTPUT_DIR"
 mkdir -p "$RAW_DIR"
 
-RUN_LOG="$OUTPUT_DIR/run_batch_$(date +%Y%m%d_%H%M%S).log"
 echo ""
 echo "📋 实验参数:"
 echo "  实验组：${EXP_GROUPS[*]}"
@@ -91,7 +97,6 @@ echo "  Agent 数：$N_AGENTS"
 echo "  步数：$N_STEPS"
 echo "  总实验数：$((${#EXP_GROUPS[@]} * $REPETITIONS))"
 echo "  输出目录：$OUTPUT_DIR"
-echo "  运行日志：$RUN_LOG"
 echo "  日志间隔：每 ${LOG_INTERVAL} 步"
 echo "  汇总文件：$SUMMARY_FILE"
 echo "  并行 workers：$REPETITION_WORKERS"
@@ -101,7 +106,6 @@ echo "  LLM 超时秒数：$TIMEOUT_SECONDS"
 echo "  LLM 最大并发请求：$LLM_MAX_INFLIGHT"
 echo "  单步决策重试次数：$LLM_DECISION_RETRY_ATTEMPTS"
 echo "  单步重试退避起始秒数：$LLM_DECISION_RETRY_BACKOFF_SECONDS"
-echo "  终端 UI 模式：live（非交互终端自动降级 quiet 进度）"
 echo "  UI 刷新秒数：$UI_REFRESH_SECONDS"
 echo ""
 
@@ -123,48 +127,28 @@ for g in ['A', 'B', 'C', 'D']:
     get_config(g)
 print('✅ 配置预检查通过: A/B/C/D')
 "
-if command -v script >/dev/null 2>&1; then
-    script -q "$RUN_LOG" python python/run_preflight.py \
-        --mode formal_batch \
-        --groups "${EXP_GROUPS[@]}" \
-        --repetitions "$REPETITIONS" \
-        --seed-start "$SEED_START" \
-        --n-agents "$N_AGENTS" \
-        --n-steps "$N_STEPS" \
-        --repetition-workers "$REPETITION_WORKERS" \
-        --run-retries "$RUN_RETRIES" \
-        --retry-backoff-seconds "$RETRY_BACKOFF_SECONDS" \
-        --ui-refresh-seconds "$UI_REFRESH_SECONDS" \
-        --timeout-seconds "$TIMEOUT_SECONDS" \
-        --log-interval "$LOG_INTERVAL" \
-        --output-dir "$OUTPUT_DIR" \
-        --raw-dir "$RAW_DIR" \
-        --summary-file "$SUMMARY_FILE"
-else
-    python python/run_preflight.py \
-        --mode formal_batch \
-        --groups "${EXP_GROUPS[@]}" \
-        --repetitions "$REPETITIONS" \
-        --seed-start "$SEED_START" \
-        --n-agents "$N_AGENTS" \
-        --n-steps "$N_STEPS" \
-        --repetition-workers "$REPETITION_WORKERS" \
-        --run-retries "$RUN_RETRIES" \
-        --retry-backoff-seconds "$RETRY_BACKOFF_SECONDS" \
-        --ui-refresh-seconds "$UI_REFRESH_SECONDS" \
-        --timeout-seconds "$TIMEOUT_SECONDS" \
-        --log-interval "$LOG_INTERVAL" \
-        --output-dir "$OUTPUT_DIR" \
-        --raw-dir "$RAW_DIR" \
-        --summary-file "$SUMMARY_FILE"
-fi
+python python/run_experiment.py \
+    --mode formal_batch \
+    --groups "${EXP_GROUPS[@]}" \
+    --repetitions "$REPETITIONS" \
+    --seed-start "$SEED_START" \
+    --n-agents "$N_AGENTS" \
+    --n-steps "$N_STEPS" \
+    --repetition-workers "$REPETITION_WORKERS" \
+    --run-retries "$RUN_RETRIES" \
+    --retry-backoff-seconds "$RETRY_BACKOFF_SECONDS" \
+    --ui-refresh-seconds "$UI_REFRESH_SECONDS" \
+    --timeout-seconds "$TIMEOUT_SECONDS" \
+    --log-interval "$LOG_INTERVAL" \
+    --output-dir "$OUTPUT_DIR" \
+    --raw-dir "$RAW_DIR" \
+    --summary-file "$SUMMARY_FILE"
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "🎉 所有实验完成！"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "📊 结果位置:"
-echo "  运行日志：$RUN_LOG"
 echo "  批次事件：$OUTPUT_DIR/batch_events.jsonl"
 echo "  批次汇总：$SUMMARY_FILE"
 echo "  指标数据：$OUTPUT_DIR/metrics_*.json"

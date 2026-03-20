@@ -28,7 +28,7 @@ class DiffusionModel(Model):
         "openness",
         "risk_tolerance",
         "adopted_ratio",
-        "emotion_arousal",
+        "wom_high_arousal_ratio",
         "innovation_coef",
         "imitation_coef",
         "wom_bucket",
@@ -62,10 +62,12 @@ class DiffusionModel(Model):
         self.decision_trace: list[dict[str, Any]] = []
         self.wom_messages_sent = 0
         self.wom_messages_delivered = 0
+        self.wom_messages_sent_high = 0
+        self.wom_messages_sent_low = 0
         self.initial_innovators = 0
-        self.wom_bucket = self._resolve_wom_bucket(
-            strength=config.wom_strength, emotion_arousal=config.emotion_arousal
-        )
+        self.wom_strength = self._normalize_wom_strength(config.wom_strength)
+        self.wom_high_arousal_ratio = float(np.clip(config.wom_high_arousal_ratio, 0.0, 1.0))
+        self.wom_bucket = f"{self.wom_strength}_mix"
         self.wom_corpus = self._load_wom_corpus(config.wom_corpus_path)
 
         self.network = generate_network(
@@ -121,14 +123,11 @@ class DiffusionModel(Model):
         )
 
     @staticmethod
-    def _arousal_to_bin(emotion_arousal: float) -> str:
-        return "high" if emotion_arousal >= 0.5 else "low"
-
-    def _resolve_wom_bucket(self, *, strength: str, emotion_arousal: float) -> str:
+    def _normalize_wom_strength(strength: str) -> str:
         normalized_strength = strength.strip().lower()
         if normalized_strength not in {"strong", "weak"}:
             raise ValueError("wom.strength must be one of: strong, weak")
-        return f"{normalized_strength}_{self._arousal_to_bin(emotion_arousal)}"
+        return normalized_strength
 
     def _load_wom_corpus(self, corpus_path: str) -> dict[str, list[str]]:
         project_root = Path(__file__).resolve().parents[2]
@@ -156,20 +155,24 @@ class DiffusionModel(Model):
                     buckets[bucket_key].append(text)
         return buckets
 
-    def _pick_wom_message(self) -> str:
-        primary_pool = self.wom_corpus.get(self.wom_bucket, [])
+    def _pick_wom_message(self) -> tuple[str, str]:
+        arousal_bin = "high" if self.random.random() < self.wom_high_arousal_ratio else "low"
+        bucket_key = f"{self.wom_strength}_{arousal_bin}"
+        primary_pool = self.wom_corpus.get(bucket_key, [])
         if primary_pool:
-            return str(self.random.choice(primary_pool))
-        strength = self.config.wom_strength.strip().lower()
+            return str(self.random.choice(primary_pool)), bucket_key
+        strength = self.wom_strength
         fallback_pool = []
+        fallback_bucket = ""
         for key, values in self.wom_corpus.items():
             if key.startswith(f"{strength}_"):
+                if not fallback_bucket and values:
+                    fallback_bucket = key
                 fallback_pool.extend(values)
         if fallback_pool:
-            return str(self.random.choice(fallback_pool))
+            return str(self.random.choice(fallback_pool)), fallback_bucket or bucket_key
         raise ValueError(
-            f"WOM corpus has no messages for strength={self.config.wom_strength}, "
-            f"bucket={self.wom_bucket}"
+            f"WOM corpus has no messages for strength={self.wom_strength}, bucket={bucket_key}"
         )
 
     def _propagate_wom_messages(self) -> None:
@@ -177,11 +180,15 @@ class DiffusionModel(Model):
         for sender in senders:
             if self.random.random() >= sender.sharing_probability():
                 continue
-            message = self._pick_wom_message()
+            message, bucket_key = self._pick_wom_message()
             neighbors = self.get_neighbors(sender.unique_id)
             if not neighbors:
                 continue
             self.wom_messages_sent += 1
+            if bucket_key.endswith("_high"):
+                self.wom_messages_sent_high += 1
+            elif bucket_key.endswith("_low"):
+                self.wom_messages_sent_low += 1
             for neighbor_id in neighbors:
                 receiver = self.population[neighbor_id]
                 receiver.memory.wom_received.append(message)
@@ -204,13 +211,14 @@ class DiffusionModel(Model):
 
     def _seed_initial_innovators(self) -> None:
         """
-        按 Bass 创新项设置初始采纳者。
+        按初始火种率设置初始采纳者。
 
-        语义：p 表示外生创新概率。离散个体场景下用 round(N*p) 近似期望创新者数量，
-        并在 p>0 时至少保留 1 个种子，避免冷启动阶段 WOM 完全无源。
+        语义：与外生创新概率(p)解耦，initial_seed_ratio 代表产品内测或冷启动阶段的种子用户比例。
+        离散个体场景下用 round(N * initial_seed_ratio) 近似期望创新者数量，
+        并在 ratio > 0 时至少保留 1 个种子，避免冷启动阶段 WOM 完全无源。
         """
-        expected = int(round(self.config.n_agents * max(0.0, self.config.innovation_coef)))
-        if self.config.innovation_coef > 0:
+        expected = int(round(self.config.n_agents * max(0.0, self.config.initial_seed_ratio)))
+        if self.config.initial_seed_ratio > 0:
             expected = max(1, expected)
         seed_count = min(self.config.n_agents, expected)
         if seed_count <= 0:
@@ -321,15 +329,19 @@ class DiffusionModel(Model):
                 "network_type": self.config.network_type,
                 "wom_strength": self.config.wom_strength,
                 "wom_bucket": self.wom_bucket,
+                "wom_high_arousal_ratio": self.wom_high_arousal_ratio,
                 "wom_corpus_path": self.config.wom_corpus_path,
                 "wom_memory_limit": self.config.wom_memory_limit,
                 "wom_share_multiplier": self.config.wom_share_multiplier,
+                "initial_seed_ratio": self.config.initial_seed_ratio,
                 "n_agents": self.config.n_agents,
                 "n_steps": self.config.n_steps,
             },
             "wom_usage": {
                 "messages_sent": self.wom_messages_sent,
                 "messages_delivered": self.wom_messages_delivered,
+                "messages_sent_high": self.wom_messages_sent_high,
+                "messages_sent_low": self.wom_messages_sent_low,
             },
             "bootstrap_usage": {"initial_innovators": self.initial_innovators},
             "llm_usage": {

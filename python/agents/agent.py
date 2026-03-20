@@ -24,6 +24,7 @@ class AgentProfile:
     这里内部采样使用 [2, 9] 的连续分数，便于与问卷式量表直觉对齐。
     进入 LLM 前会做一次归一化映射到 [0, 1]，保证与提示词中的取值范围一致。
     """
+
     agent_id: int
     openness: float = field(default_factory=lambda: float(np.random.uniform(2.0, 9.0)))
     risk_tolerance: float = field(default_factory=lambda: float(np.random.uniform(2.0, 9.0)))
@@ -33,6 +34,7 @@ class AgentProfile:
 @dataclass
 class AgentMemory:
     """与扩散过程相关的可变状态与短期记忆。"""
+
     has_adopted: bool = False
     adoption_time: int | None = None
     wom_received: list[str] = field(default_factory=list)
@@ -77,7 +79,7 @@ class Agent:
             openness=openness,
             risk_tolerance=risk_tolerance,
             adopted_ratio=adopted_ratio,
-            emotion_arousal=self.model.config.emotion_arousal,
+            wom_high_arousal_ratio=self.model.config.wom_high_arousal_ratio,
             wom_strength=self.model.config.wom_strength,
             wom_messages=self.memory.wom_received,
             innovation_coef=self.model.config.innovation_coef,
@@ -97,7 +99,7 @@ class Agent:
                 "openness": round(openness, 4),
                 "risk_tolerance": round(risk_tolerance, 4),
                 "adopted_ratio": round(adopted_ratio, 4),
-                "emotion_arousal": round(self.model.config.emotion_arousal, 4),
+                "wom_high_arousal_ratio": round(self.model.config.wom_high_arousal_ratio, 4),
                 "innovation_coef": round(self.model.config.innovation_coef, 4),
                 "imitation_coef": round(self.model.config.imitation_coef, 4),
                 "wom_bucket": self.model.wom_bucket,

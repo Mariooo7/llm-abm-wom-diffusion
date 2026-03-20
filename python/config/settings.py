@@ -15,16 +15,18 @@ class SimulationConfig:
     - 工程参数（如 LLM_API_KEY）来自环境变量
     - 运行期不再“猜测/推断”缺失字段，缺啥就按默认值填充，避免隐式行为
     """
+
     group: str
     network_type: str
     n_agents: int
     avg_degree: int
     rewiring_prob: float
     wom_strength: str
-    emotion_arousal: float
+    wom_high_arousal_ratio: float
     wom_corpus_path: str
     wom_memory_limit: int
     wom_share_multiplier: float
+    initial_seed_ratio: float
     innovation_coef: float
     imitation_coef: float
     n_steps: int
@@ -82,10 +84,11 @@ def get_config(group: str) -> SimulationConfig:
         avg_degree=int(network.get("avg_degree", 8)),
         rewiring_prob=float(network.get("rewiring_prob", 0.1)),
         wom_strength=wom.get("strength", "strong"),
-        emotion_arousal=float(wom.get("emotion_arousal", 0.5)),
+        wom_high_arousal_ratio=float(wom.get("high_arousal_ratio", 0.5)),
         wom_corpus_path=str(wom.get("corpus_path", "data/wom/wom_corpus.csv")),
         wom_memory_limit=int(wom.get("memory_limit", 5)),
         wom_share_multiplier=float(wom.get("share_multiplier", 1.0)),
+        initial_seed_ratio=float(simulation.get("initial_seed_ratio", 0.04)),
         innovation_coef=float(bass.get("innovation_coef", 0.01)),
         imitation_coef=float(bass.get("imitation_coef", 0.3)),
         n_steps=int(simulation.get("n_steps", 60)),
@@ -104,9 +107,7 @@ def get_config(group: str) -> SimulationConfig:
         llm_timeout_seconds=int(os.getenv("LLM_REQUEST_TIMEOUT_SECONDS", "").strip() or 180),
         llm_gateway_url=str(os.getenv("LLM_GATEWAY_URL", "").strip() or llm_gateway_url_default),
         llm_gateway_autostart=(
-            llm_gateway_autostart_raw in {"1", "true", "yes"}
-            if llm_gateway_autostart_raw
-            else True
+            llm_gateway_autostart_raw in {"1", "true", "yes"} if llm_gateway_autostart_raw else True
         ),
         llm_decision_retry_attempts=max(
             0,

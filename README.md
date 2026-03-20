@@ -1,249 +1,129 @@
 # 毕业论文仿真实验项目
 
 **论文题目**: 基于大模型智能体的新产品扩散机制研究：网络结构与口碑语义的交互效应
+**作者**: maorui1
 
-**英文名称**: LLM-Agent-Based New Product Diffusion Simulation
-
-**技术栈**: Go(HTTP 网关) + Python (Mesa) 混合架构
+**技术栈**: Go (并发调度与网关) + Python (Mesa ABM 引擎) 混合架构
 
 ---
 
 ## 📋 项目简介
 
-本项目采用 **Go + Python 混合架构** 进行基于大语言模型 (LLM) 的智能体新产品扩散仿真实验：
+本项目用于探究复杂网络中新产品扩散的微观机制，构建了基于大语言模型（LLM）的 Agent 决策框架：
 
-- **Go (HTTP 网关)**: LLM 决策调用、重试退避、Token 统计
-- **Python (Mesa 框架)**: ABM 仿真主流程、网络生成、数据分析
-- **混合架构优势**: Go 的类型安全 + Python 的科学生态
+- **Go (HTTP 网关)**: 提供高并发、稳定的 LLM 请求调度、重试退避与 Token 统计。
+- **Python (Mesa 框架)**: 负责 ABM 仿真主流程、复杂网络生成（NetworkX）及数据指标采集。
+- **混合架构优势**: 兼顾 Go 的高并发吞吐能力与 Python 在复杂网络/数据科学领域的生态优势。
 
-### 核心研究问题
+### 核心研究假设
 
-| 编号 | 问题 | 对应假设 |
-|------|------|----------|
-| RQ1 | 网络结构如何影响新产品扩散速度？ | H1 |
-| RQ2 | 口碑语义如何影响扩散规模？ | H2 |
-| RQ3 | 网络结构与口碑语义是否存在交互效应？ | H3 |
+本研究采用 **2×2 双因素实验设计**：
+- **自变量 1**: 网络拓扑结构 (小世界网络 Small-World vs 随机网络 Random)
+- **自变量 2**: 产品口碑语义 (强产品 Strong WOM vs 弱产品 Weak WOM)
 
-### 实验设计
-
-**2×2 因子设计**:
-- **自变量 1**: 网络结构 (小世界网络 vs 随机网络)
-- **自变量 2**: 口碑语义 (强情感 vs 弱情感)
-- **因变量**: 扩散速度、扩散规模、扩散曲线
+核心验证点：
+1. **主效应**: 强产品在任何网络中的扩散率均高于弱产品。
+2. **交互效应 (复杂传染理论)**: 
+   - 对于强产品，随机网络的长程连接能加速“简单传染”，扩散更快。
+   - 对于弱产品，小世界网络的高聚类特征能提供“重复触达”，为其生存与扩散提供“抱团庇护”。
 
 ---
 
 ## 🏗️ 项目结构
 
-```
+```text
 thesis-diffusion-simulation/
 ├── python/                     # Python ABM 仿真模块
-│   ├── models/                 # Mesa 模型定义
-│   │   ├── __init__.py
-│   │   └── model.py           # DiffusionModel
-│   ├── networks/               # 网络生成 (NetworkX)
-│   ├── llm/                    # LLM 决策客户端
-│   ├── config/                 # 配置解析
-│   └── requirements.txt        # Python 依赖
+│   ├── models/                 # Mesa 模型定义 (model.py)
+│   ├── networks/               # 网络生成器 (generator.py)
+│   ├── agents/                 # 智能体定义 (agent.py)
+│   ├── llm/                    # Python 侧决策客户端
+│   ├── config/                 # 配置解析逻辑
+│   └── run_experiment.py       # 仿真实验启动器
 │
-├── go/                         # Go LLM 网关模块
-│   ├── cmd/
-│   │   └── main.go            # /decide HTTP 服务入口
-│   └── go.mod                 # Go 模块配置
+├── go/                         # Go 并发网关
+│   └── cmd/main.go             # /decide 决策网关服务
 │
-├── experiments/                # 实验配置
-│   └── configs/               # 实验配置文件
-│
-├── data/                       # 数据目录
-│   ├── raw/                   # 原始仿真数据
-│   ├── processed/             # 处理后的数据
-│   └── results/               # 分析结果
-│
-├── docs/                       # 文档
-│   ├── AI_CODING_GUIDE.md     # AI 辅助编程指南
-│   └── ARCHITECTURE.md        # 架构设计文档
-│
+├── experiments/configs/        # 核心实验参数 (A/B/C/D 四组 YAML 配置)
+├── data/                       # 实验数据 (由 .gitignore 排除结果文件)
+├── docs/                       # 架构与开发文档
 ├── scripts/                    # 运行脚本
-│   ├── run_pilot.sh           # 预实验脚本
-│   └── run_batch.sh           # 批量实验脚本
+│   └── run_experiment.sh       # 统一仿真入口
 │
-├── README.md                   # 项目说明
-└── .gitignore                  # Git 忽略文件
+└── README.md                   # 本文档
 ```
 
 ---
 
 ## 🚀 快速开始
 
-### 环境要求
+### 1. 环境准备
 
-- **Python**: 3.11+
-- **Go**: 1.23+ (可选，仅用于 LLM 智能体)
-- **uv** (推荐) 或 pip
-
-### Python 环境安装
+- **Python**: 3.11+ (建议使用 `uv` 进行依赖管理)
+- **Go**: 1.23+
 
 ```bash
-# 进入 Python 目录
-cd thesis-diffusion-simulation/python
-
-# 使用 uv (推荐)
-uv venv
+# Python 依赖安装
+uv venv .venv
 source .venv/bin/activate
-uv pip install -r requirements.txt
+uv pip install -r python/requirements.txt
 
-# 或使用 pip
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### Go 环境安装
-
-```bash
-# 安装 Go (macOS)
-brew install go@1.23
-
-# 进入 Go 目录
-cd thesis-diffusion-simulation/go
-
-# 下载依赖
+# Go 依赖安装
+cd go
 go mod download
 go mod tidy
+cd ..
 ```
 
-### API Key 配置
+### 2. API Key 配置
 
 ```bash
-cd thesis-diffusion-simulation
 cp .env.example .env
 ```
+在 `.env` 文件中填入你的 `LLM_API_KEY`。支持 OpenAI 兼容格式接口（默认配置指向阿里云百炼）。
 
-将 `.env` 中的 `LLM_API_KEY` 填写为你的实际密钥。
-模型相关配置（provider/model/base_url/temperature/timeout）统一在 `.env` 管理；实验调度参数统一由脚本默认值或命令行覆盖。
+### 3. 运行仿真（统一入口）
 
-### 一键运行当前正式实验
+所有实验统一通过 `scripts/run_experiment.sh` 调度，脚本内置并发管理与网关自启。
 
-Linux / macOS:
-
+**场景 A：一键运行正式毕业论文批次（4组 × 15次）**
 ```bash
-cd thesis-diffusion-simulation
-bash scripts/run_batch.sh
+bash scripts/run_experiment.sh
 ```
+*自动以 4 线程并发跑满 60 次 Run，结果落盘至 `data/results/formal_<时间戳>`。*
 
-Windows PowerShell:
-
-```powershell
-cd thesis-diffusion-simulation
-$runTag = "formal_$(Get-Date -Format 'yyyyMMdd_HHmmss')"
-$env:REPETITION_WORKERS="4"
-$env:TIMEOUT_SECONDS="210"
-$env:RUN_RETRIES="2"
-$env:RETRY_BACKOFF_SECONDS="3"
-$env:LLM_MAX_INFLIGHT="50"
-uv run python python/run_preflight.py --mode formal_batch --groups A B C D --repetitions 15 --seed-start 12001 --repetition-workers 4 --run-retries 2 --retry-backoff-seconds 3 --timeout-seconds 210 --log-interval 10 --output-dir "data/results/$runTag" --raw-dir "data/raw/$runTag" --summary-file "data/results/$runTag/batch_summary.csv"
-```
-
-可选运行时覆盖变量（建议在命令行设置，不建议写入 `.env`）:
-
+**场景 B：自定义参数探路（极小规模验证）**
+通过环境变量覆盖默认参数：
 ```bash
-REPETITION_WORKERS=4
-TIMEOUT_SECONDS=210
-RUN_RETRIES=2
-RETRY_BACKOFF_SECONDS=3
-LLM_MAX_INFLIGHT=50
-LLM_DECISION_RETRY_ATTEMPTS=2
-LLM_DECISION_RETRY_BACKOFF_SECONDS=1
-UI_REFRESH_SECONDS=1
+EXP_GROUPS_OVERRIDE="A B" \
+REPETITIONS=2 \
+N_AGENTS=10 \
+N_STEPS=5 \
+bash scripts/run_experiment.sh
 ```
-
-运行完成后，结果默认落在带时间戳目录中：
-- `data/results/formal_时间戳/batch_summary.csv`
-- `data/results/formal_时间戳/metrics_*.json`
-- `data/results/formal_时间戳/adoption_timeline_*.csv`
-- `data/results/formal_时间戳/batch_events.jsonl`
-- `data/raw/formal_时间戳/simulation_*.csv`
-
-`formal_batch` 运行中会每秒刷新终端看板，实时显示总览与分组进度：
-- 总览：`queued / running / retrying / done / failed`
-- 分组：每组完成数、步数进度条、`Rate μ/max`、`Calls(done)`、活跃任务数与失败数
-- 活跃任务：最多显示 4 条，包含 `group/rep/seed/step/rate/try`
-- 默认使用 Rich Live 原地刷新，不刷屏；若非交互终端会自动回退 `compact` 摘要输出
-- 当前并发建议：`REPETITION_WORKERS=4` 作为稳定默认值；继续提高通常会增加长尾抖动
-
-run 内部默认启用“失败点续跑”（单步决策级重试）：
-- 当某个 agent 决策调用出现可重试错误时，优先在当前 step 内局部重试
-- 仅在局部重试耗尽后，才触发 run 级重试
-
-### 运行单次快速验证（可选）
-
-```bash
-# Python: 运行预实验（统一入口）
-cd thesis-diffusion-simulation
-bash scripts/run_pilot.sh
-
-# Go: 运行 LLM 智能体测试 (需要配置 API Key)
-cd thesis-diffusion-simulation/go
-export LLM_API_KEY="your-api-key"
-go run cmd/main.go
-```
+*结果落盘至 `data/results/verify_<时间戳>`，避免污染正式数据。*
 
 ---
 
-## 📦 核心依赖
+## 🧪 实验基线配置 (当前生效)
 
-### Python
+基于预实验校准，正式批次采用如下参数矩阵确保平滑的 S 曲线与严谨的控制变量：
 
-| 包 | 版本 | 用途 |
-|----|------|------|
-| mesa | 3.3.1 | ABM 仿真框架 |
-| networkx | 3.6.1 | 网络生成与分析 |
-| numpy | 2.4.2 | 数值计算 |
-| pandas | 3.0.1 | 数据处理 |
-| matplotlib | 3.10.8 | 数据可视化 |
-| seaborn | 0.13.2 | 统计可视化 |
-| scipy | 1.17.1 | 统计检验 |
+| 组别 | 网络拓扑 | 产品强度 | q (模仿系数) | initial_seed_ratio | High Arousal Ratio (高唤醒口碑占比) |
+|------|----------|----------|--------------|--------------------|--------------------------------------|
+| **A** | 小世界 | 强 | 0.20 | 0.04 | 60% (0.6) |
+| **B** | 小世界 | 弱 | 0.20 | 0.04 | 30% (0.3) |
+| **C** | 随机网络 | 强 | 0.20 | 0.04 | 60% (0.6) |
+| **D** | 随机网络 | 弱 | 0.20 | 0.04 | 30% (0.3) |
 
-### Go
+**全局控制变量**:
+- 智能体数量 ($N$): 100
+- 仿真步数 ($T$): 60
+- 网络平均度数 ($K$): 8
+- 创新系数 ($p$): 0.003
+- Monte Carlo 重复次数: 15
 
-| 包 | 版本 | 用途 |
-|----|------|------|
-| 标准库 net/http | go1.23 | OpenAI 兼容接口调用与网关服务 |
-
----
-
-## 🧪 实验配置
-
-### 默认参数
-
-| 参数 | 值 | 说明 |
-|------|-----|------|
-| N | 100 | 智能体数量 |
-| T | 60 | 仿真步数 |
-| p | 0.003 | 创新系数 (Bass 模型，四组一致) |
-| q(强组) | 0.12 | 模仿系数 (A/C) |
-| q(弱组) | 0.095 | 模仿系数 (B/D) |
-| emotion_arousal(强组) | 0.25 | 口碑情绪唤醒度 (A/C) |
-| emotion_arousal(弱组) | 0.10 | 口碑情绪唤醒度 (B/D) |
-| K | 6 | 网络平均度数 |
-| repetitions | 15 | Monte Carlo 重复次数 |
-
-### Bass 创新项的实现说明
-- 初始创新者：按 `round(N * p)` 设定，且当 `p > 0` 时至少为 1
-- 目的：对应 Bass 模型中“外生创新者”的含义，避免早期完全没有采纳导致 WOM 无法传播
-
-### 实验组
-
-| 组别 | 网络结构 | 口碑语义 | 预期效果 |
-|------|----------|----------|----------|
-| A | 小世界 | 强情感 | 高扩散 |
-| B | 小世界 | 弱情感 | 中扩散 |
-| C | 随机 | 强情感 | 中扩散 |
-| D | 随机 | 弱情感 | 最弱扩散 |
-
-### 参数校准过程（2026-03-11）
-
-- 触发原因：极小规模校验中，强组出现过快饱和（A/C 在 12 步内接近或达到 100%），削弱了网络结构因子的可辨识性
+*说明：`initial_seed_ratio` 用于控制开局的冷启动火种数量，与自发创新概率 $p$ 实现物理隔离，保证方差收敛。*
 - 校准原则：保持 2×2 因子设计不变，只调整研究参数，不改研究语义与调度机制
 - 证据摘要：
   - A 组（30 agents, 12 steps）：`final_adoption_rate=1.0`
@@ -261,15 +141,13 @@ go run cmd/main.go
   - 弱组回调：`emotion_arousal 0.10 -> 0.12`，`q 0.08 -> 0.09`
 - 当前判断：强弱组分层已拉开，A 对 C 的结构优势可见，但 A 组仍偏快，正式批次需重点监控 t50 与早期斜率
 
-### 参数再校准（2026-03-12）
-- 触发原因：WOM 完整实现后，LLM 在“无邻里采纳 + 无近期口碑”条件下系统性低估采纳概率，导致贴地
-- 校准原则：保留 2×2 设计与 WOM 语义，仅调整 Bass 参数并补充创新项语义的初始创新者
-- 调整动作：
-  - 创新项：`p 0.001 -> 0.002`（维持极小外生采纳，配合初始创新者）
-  - 强组：`q 0.10 -> 0.08`
-  - 弱组：`q 0.09 -> 0.06`
-- 近期验证（20 agents, 12 steps, seed=25101）：
-  - A=0.60，B=0.05，C=0.40，D=0.05
+### 方案三：外生环境概率分布校准（2026-03-19）
+- 触发原因：强组极易“秒满”（天花板效应），弱组常年“贴底”（地板效应），之前的差异化 p/q 调整破坏了控制变量纯洁性。
+- 理论动作：采用“方案三（外生环境概率分布）”，通过环境中的信息极化比例控制扩散阻力，完全剔除提示词中的静态唤醒数值，让 LLM 纯靠文本阅读理解感知情感。
+- 最终配置：
+  - 全组统一：`p=0.003`, `q=0.10`, `share_multiplier=1.0`（消除个人性格混淆）。
+  - 强组（A/C）：`strength=strong`, `high_arousal_ratio=0.8`（80%为高唤醒激进文本）。
+  - 弱组（B/D）：`strength=weak`, `high_arousal_ratio=0.2`（仅20%为高唤醒猎奇文本，以此打破冷启动死锁）。
 
 ### 正式规模试跑（2026-03-11）
 

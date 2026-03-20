@@ -197,9 +197,7 @@ def _render_formal_batch_compact(
         done_count = sum(1 for v in per_group if str(v.get("status")) == "done")
         fail_count = sum(1 for v in per_group if str(v.get("status")) == "failed")
         active = sum(
-            1
-            for v in per_group
-            if str(v.get("status")) in {"running", "retrying", "starting"}
+            1 for v in per_group if str(v.get("status")) in {"running", "retrying", "starting"}
         )
         max_step = max((int(v.get("step", 0)) for v in per_group), default=0)
         n_steps = max((int(v.get("n_steps", 0)) for v in per_group), default=0)
@@ -208,9 +206,7 @@ def _render_formal_batch_compact(
         rate_mean = sum(rates) / len(rates) if rates else 0.0
         rate_max = max(rates) if rates else 0.0
         calls_done = sum(
-            int(v.get("model_calls", 0))
-            for v in per_group
-            if str(v.get("status")) == "done"
+            int(v.get("model_calls", 0)) for v in per_group if str(v.get("status")) == "done"
         )
         summary = (
             f"{group} {done_count}/{group_total} {bar} "
@@ -295,9 +291,7 @@ def _render_formal_batch_rich(
         done_count = sum(1 for v in per_group if str(v.get("status")) == "done")
         fail_count = sum(1 for v in per_group if str(v.get("status")) == "failed")
         active = sum(
-            1
-            for v in per_group
-            if str(v.get("status")) in {"running", "retrying", "starting"}
+            1 for v in per_group if str(v.get("status")) in {"running", "retrying", "starting"}
         )
         max_step = max((int(v.get("step", 0)) for v in per_group), default=0)
         mean_step = sum(int(v.get("step", 0)) for v in per_group) / max(1, group_total)
@@ -306,9 +300,7 @@ def _render_formal_batch_rich(
         rate_mean = sum(rates) / len(rates) if rates else 0.0
         rate_max = max(rates) if rates else 0.0
         calls_done = sum(
-            int(v.get("model_calls", 0))
-            for v in per_group
-            if str(v.get("status")) == "done"
+            int(v.get("model_calls", 0)) for v in per_group if str(v.get("status")) == "done"
         )
         group_run_steps[group] = _format_group_run_steps(per_group, max_items=None)
         runs_bar = _format_bar(done_count, group_total if group_total > 0 else 1, width=10)
@@ -335,9 +327,7 @@ def _render_formal_batch_rich(
     active_table.add_column("Rate", width=8, justify="right")
     active_table.add_column("Try", width=5, justify="right")
     active_rows = [
-        v
-        for v in states.values()
-        if str(v.get("status")) in {"running", "retrying", "starting"}
+        v for v in states.values() if str(v.get("status")) in {"running", "retrying", "starting"}
     ]
     active_rows.sort(
         key=lambda item: (
@@ -387,11 +377,11 @@ def _render_formal_batch_rich(
             "",
             events_table,
             "",
-            footer
+            footer,
         ),
         title="Batch Live Dashboard",
         border_style="cyan",
-        padding=(1, 2)
+        padding=(1, 2),
     )
 
 
@@ -653,6 +643,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                         }
                 if should_log_event and event_payload is not None:
                     _append_event(event_payload)
+
             try:
                 cfg = build_config(group, seed, args.n_agents, args.n_steps, args.timeout_seconds)
                 raw_path = raw_dir / f"simulation_{cfg.group}_{rep}.csv"
@@ -704,12 +695,20 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     "seed": cfg.seed,
                     "n_agents": cfg.n_agents,
                     "n_steps": cfg.n_steps,
+                    "wom_strength": result["wom_strength"],
+                    "wom_bucket": result["wom_bucket"],
+                    "wom_high_arousal_ratio": cfg.wom_high_arousal_ratio,
                     "model": model_slug,
+                    "initial_seed_ratio": cfg.initial_seed_ratio,
                     "final_adoption_rate": result["final_adoption_rate"],
                     "t10_step": result["t10_step"],
                     "t50_step": result["t50_step"],
                     "auc_adoption": result["auc_adoption"],
                     "total_adopters": result["total_adopters"],
+                    "wom_messages_sent": result["wom_usage"]["messages_sent"],
+                    "wom_messages_sent_high": result["wom_usage"]["messages_sent_high"],
+                    "wom_messages_sent_low": result["wom_usage"]["messages_sent_low"],
+                    "wom_messages_delivered": result["wom_usage"]["messages_delivered"],
                     "model_calls": result["llm_usage"]["model_calls"],
                     "prompt_tokens": result["llm_usage"]["prompt_tokens"],
                     "completion_tokens": result["llm_usage"]["completion_tokens"],
@@ -741,8 +740,7 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
                     current["error"] = message
                     if retriable and attempt < attempts_total - 1:
                         event = (
-                            f"retry {group}-r{rep}-s{seed} "
-                            f"attempt={attempt + 2}/{attempts_total}"
+                            f"retry {group}-r{rep}-s{seed} attempt={attempt + 2}/{attempts_total}"
                         )
                         recent_events.append(event)
                         if len(recent_events) > 8:
@@ -820,9 +818,6 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
 
     refresh_seconds = max(0.2, float(getattr(args, "ui_refresh_seconds", 1.0)))
     use_live_ui = RICH_AVAILABLE and sys.stdout.isatty()
-    if not use_live_ui:
-        reason = "rich 不可用" if not RICH_AVAILABLE else "终端非交互模式"
-        print(f"[ui] 已切换为 quiet 进度模式: {reason}", flush=True)
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
         future_to_task = {
@@ -900,12 +895,20 @@ def run_formal_batch(args: argparse.Namespace) -> dict[str, Any]:
         "seed",
         "n_agents",
         "n_steps",
+        "wom_strength",
+        "wom_bucket",
+        "wom_high_arousal_ratio",
         "model",
+        "initial_seed_ratio",
         "final_adoption_rate",
         "t10_step",
         "t50_step",
         "auc_adoption",
         "total_adopters",
+        "wom_messages_sent",
+        "wom_messages_sent_high",
+        "wom_messages_sent_low",
+        "wom_messages_delivered",
         "model_calls",
         "prompt_tokens",
         "completion_tokens",
@@ -1032,7 +1035,7 @@ def run_gateway_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         openness=0.62,
         risk_tolerance=0.41,
         adopted_ratio=0.35,
-        emotion_arousal=0.58,
+        wom_high_arousal_ratio=0.58,
         wom_strength="strong",
         wom_messages=["message a", "message b", "message c"],
         innovation_coef=0.01,
@@ -1052,7 +1055,7 @@ def run_gateway_benchmark(args: argparse.Namespace) -> dict[str, Any]:
                 openness=0.62,
                 risk_tolerance=0.41,
                 adopted_ratio=0.35,
-                emotion_arousal=0.58,
+                wom_high_arousal_ratio=0.58,
                 wom_strength="strong",
                 wom_messages=["message a", "message b", "message c"],
                 innovation_coef=0.01,
@@ -1113,7 +1116,7 @@ def run_concurrency_sweep(args: argparse.Namespace) -> dict[str, Any]:
                     openness=0.62,
                     risk_tolerance=0.41,
                     adopted_ratio=0.35,
-                    emotion_arousal=0.58,
+                    wom_high_arousal_ratio=0.58,
                     wom_strength="strong",
                     wom_messages=["message a", "message b", "message c"],
                     innovation_coef=0.01,
