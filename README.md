@@ -205,6 +205,7 @@ go test ./...
 - [CodeMap](docs/CODEMAP.md)
 - [架构设计](docs/ARCHITECTURE.md)
 - [环境配置指南](docs/ENV_SETUP.md)
+- [项目进展与演进日志](docs/PROJECT_PROGRESS.md)
 
 ---
 
