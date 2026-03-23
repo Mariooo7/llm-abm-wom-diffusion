@@ -76,7 +76,14 @@ htmlcov/
 # ruff
 .ruff_cache/
 
+# Analysis outputs
+# analysis/figures/*
+# !analysis/figures/.gitkeep
+
 # Documents (optional - can be committed if needed)
 docs/drafts/
 docs/notes/
 _local_meta/
+
+# Thesis Outline
+THESIS_OUTLINE.md
