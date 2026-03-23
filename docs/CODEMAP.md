@@ -6,7 +6,7 @@
 
 ## 2. 目录总览
 ```text
-thesis-diffusion-simulation/
+llm-abm-wom-diffusion/
 ├── docs/
 ├── experiments/configs/
 ├── go/

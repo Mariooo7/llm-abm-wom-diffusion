@@ -20,7 +20,7 @@
 ### 1. 创建虚拟环境
 
 ```bash
-cd thesis-diffusion-simulation/python
+cd llm-abm-wom-diffusion/python
 
 # 使用 uv (推荐)
 uv venv
@@ -88,7 +88,7 @@ source ~/.zshrc
 ### 3. 下载依赖
 
 ```bash
-cd thesis-diffusion-simulation/go
+cd llm-abm-wom-diffusion/go
 
 # 下载模块
 go mod download
@@ -112,7 +112,7 @@ ls -lh bin/
 ### 1. 复制环境变量模板
 
 ```bash
-cd thesis-diffusion-simulation
+cd llm-abm-wom-diffusion
 cp .env.example .env
 ```
 
@@ -158,7 +158,7 @@ LLM_SERVER_ADDR=127.0.0.1:18080
 ### Python 测试
 
 ```bash
-cd thesis-diffusion-simulation
+cd llm-abm-wom-diffusion
 
 # 一键运行当前正式实验
 bash scripts/run_batch.sh
@@ -184,7 +184,7 @@ bash scripts/run_batch.sh
 ### Go 测试 (可选，单独排查时使用)
 
 ```bash
-cd thesis-simulation/go
+cd llm-abm-wom-diffusion/go
 
 # 加载环境变量
 set -a

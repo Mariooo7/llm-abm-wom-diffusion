@@ -1,5 +1,5 @@
 [project]
-name = "thesis-diffusion-simulation"
+name = "llm-abm-wom-diffusion"
 version = "0.1.0"
 description = "LLM-Agent-Based New Product Diffusion Simulation: Network Structure × WOM Semantic Interaction Effect"
 readme = "README.md"

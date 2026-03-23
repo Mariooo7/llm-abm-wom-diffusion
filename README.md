@@ -32,7 +32,7 @@
 ## 🏗️ 项目结构
 
 ```text
-thesis-diffusion-simulation/
+llm-abm-wom-diffusion/
 ├── python/                     # Python ABM 仿真模块
 │   ├── models/                 # Mesa 模型定义 (model.py)
 │   ├── networks/               # 网络生成器 (generator.py)

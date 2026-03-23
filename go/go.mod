@@ -1,3 +1,3 @@
-module thesis-diffusion-simulation
+module llm-abm-wom-diffusion
 
 go 1.23
