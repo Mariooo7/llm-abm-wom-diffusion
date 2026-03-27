@@ -1,7 +1,6 @@
-import pandas as pd
 from pathlib import Path
-import numpy as np
 
+import pandas as pd
 
 DATA_DIR = Path("data/raw/formal_20260319_174207")
 OUTPUT_DIR = Path("analysis/tables")
@@ -45,11 +44,9 @@ def _load_group_frames() -> dict[str, pd.DataFrame]:
 
 def sample_reasonings_per_group(
     group_df: pd.DataFrame,
-    group: str,
     seed: int,
     per_group_samples: int = 8,
 ) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
     df = group_df.copy()
 
     keep_cols = [
@@ -73,8 +70,8 @@ def sample_reasonings_per_group(
     if df.empty:
         return pd.DataFrame(columns=keep_cols)
 
-    adopters = df[df["adopt_final"] == True]
-    non_adopters = df[df["adopt_final"] == False]
+    adopters = df[df["adopt_final"]]
+    non_adopters = df[~df["adopt_final"]]
 
     half = per_group_samples // 2
     n_adopt = min(len(adopters), half)
@@ -107,7 +104,9 @@ def sample_reasonings_per_group(
     return out
 
 
-def write_reasoning_table_tex(df: pd.DataFrame, out_path: Path, max_reason_len: int = 90) -> None:
+def write_reasoning_table_tex(
+    df: pd.DataFrame, out_path: Path, max_reason_len: int = 60
+) -> None:
     cols = [
         "group",
         "step",
@@ -126,11 +125,31 @@ def write_reasoning_table_tex(df: pd.DataFrame, out_path: Path, max_reason_len: 
         df.loc[df["reasoning"].str.len() > max_reason_len, "reasoning_trunc"] + "…"
     )
 
-    lines = []
-    lines.append(r"\begin{tabularx}{\textwidth}{lrrr r r c X}")
+    lines: list[str] = []
+    lines.append(r"\setlength{\tabcolsep}{4pt}")
+    lines.append(
+        r"\begin{longtable}{P{0.05\textwidth}P{0.05\textwidth}P{0.07\textwidth}"
+        r"P{0.08\textwidth}P{0.06\textwidth}P{0.06\textwidth}P{0.06\textwidth}"
+        r"P{0.28\textwidth}}"
+    )
+    lines.append(
+        r"\caption{LLMs 决策 reasoning 抽样（每组 8 条，固定随机种子）}"
+        r"\label{tab:reasoning_samples}\\"
+    )
     lines.append(r"\toprule")
-    lines.append(r"组别 & Step & Agent & 采纳比例 & WOM数 & 概率 & 采纳 & Reasoning \\")
+    lines.append(r"组别 & Step & Agent & 占比 & 条数 & 概率 & 采纳 & 摘要 \\")
     lines.append(r"\midrule")
+    lines.append(r"\endfirsthead")
+    lines.append(r"\toprule")
+    lines.append(r"组别 & Step & Agent & 占比 & 条数 & 概率 & 采纳 & 摘要 \\")
+    lines.append(r"\midrule")
+    lines.append(r"\endhead")
+    lines.append(r"\midrule")
+    lines.append(r"\multicolumn{8}{r}{续下页} \\")
+    lines.append(r"\midrule")
+    lines.append(r"\endfoot")
+    lines.append(r"\bottomrule")
+    lines.append(r"\endlastfoot")
     for _, row in df.iterrows():
         group = _latex_escape(str(row.get("group", "")))
         step = str(row.get("step", ""))
@@ -140,11 +159,12 @@ def write_reasoning_table_tex(df: pd.DataFrame, out_path: Path, max_reason_len: 
         prob = str(row.get("probability", ""))
         adopt = "T" if bool(row.get("adopt_final", False)) else "F"
         reasoning = _latex_escape(str(row.get("reasoning_trunc", "")))
-        lines.append(
-            f"{group} & {step} & {agent} & {adopted_ratio} & {wom_count} & {prob} & {adopt} & {reasoning} \\\\"
+        line = (
+            f"{group} & {step} & {agent} & {adopted_ratio} & "
+            f"{wom_count} & {prob} & {adopt} & {reasoning} \\\\"
         )
-    lines.append(r"\bottomrule")
-    lines.append(r"\end{tabularx}")
+        lines.append(line)
+    lines.append(r"\end{longtable}")
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -162,7 +182,6 @@ def main() -> None:
     for group, df in groups.items():
         sampled = sample_reasonings_per_group(
             group_df=df,
-            group=group,
             seed=base_seed + ord(group),
             per_group_samples=8,
         )
@@ -181,4 +200,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
