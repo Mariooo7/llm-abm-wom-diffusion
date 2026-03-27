@@ -87,3 +87,20 @@ _local_meta/
 
 # Thesis Outline
 THESIS_OUTLINE.md
+
+# Research workspace
+research/
+
+# LaTeX
+*.aux
+*.bbl
+*.blg
+*.bcf
+*.fls
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.run.xml
+*.fdb_latexmk
+*.bcf-SAVE-ERROR
