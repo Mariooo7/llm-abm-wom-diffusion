@@ -46,17 +46,14 @@ type tokenUsageSummary struct {
 // decisionRequest 是 Python 侧每次决策调用的输入快照。
 // 该结构的字段名直接用于 JSON 编解码，属于接口契约：改名会导致上游请求字段“静默丢失”。
 type decisionRequest struct {
-	AgentID             int      `json:"agent_id"`
-	Openness            float64  `json:"openness"`
-	RiskTolerance       float64  `json:"risk_tolerance"`
-	AdoptedRatio        float64  `json:"adopted_ratio"`
-	EmotionArousal      float64  `json:"emotion_arousal"`
-	WOMHighArousalRatio float64  `json:"wom_high_arousal_ratio"`
-	WOMStrength         string   `json:"wom_strength"`
-	WOMMessages         []string `json:"wom_messages"`
-	InnovationCoef      float64  `json:"innovation_coef"`
-	ImitationCoef       float64  `json:"imitation_coef"`
-	ContextKey          string   `json:"context_key"`
+	AgentID        int      `json:"agent_id"`
+	Openness       float64  `json:"openness"`
+	RiskTolerance  float64  `json:"risk_tolerance"`
+	AdoptedRatio   float64  `json:"adopted_ratio"`
+	WOMMessages    []string `json:"wom_messages"`
+	InnovationCoef float64  `json:"innovation_coef"`
+	ImitationCoef  float64  `json:"imitation_coef"`
+	ContextKey     string   `json:"context_key"`
 }
 
 // decisionResponse 是网关对 Python 的返回结构。
