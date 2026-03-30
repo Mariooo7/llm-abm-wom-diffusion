@@ -1,5 +1,5 @@
 Group,Network,WOM,Final Scale (Mean),Final Scale (SD),Final Scale (Min),Final Scale (Max),T50 (Mean),T50 (SD),Max Speed (Mean),Max Speed (SD)
 A,Small-World,Strong,0.977,0.054,0.79,1.0,16.4,8.322,7.267,1.335
-B,Small-World,Weak,0.169,0.075,0.06,0.31,60.0,0.0,1.8,0.676
+B,Small-World,Weak,0.169,0.075,0.06,0.31,>60,-,1.8,0.676
 C,Random,Strong,0.987,0.014,0.95,1.0,12.867,2.875,8.533,1.598
-D,Random,Weak,0.253,0.097,0.13,0.41,60.0,0.0,2.533,1.187
+D,Random,Weak,0.253,0.097,0.13,0.41,>60,-,2.533,1.187
