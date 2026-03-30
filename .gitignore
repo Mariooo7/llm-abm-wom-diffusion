@@ -90,6 +90,7 @@ THESIS_OUTLINE.md
 
 # Research workspace
 research/
+.trae/
 
 # LaTeX
 *.aux

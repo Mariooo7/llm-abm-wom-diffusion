@@ -105,7 +105,7 @@ def sample_reasonings_per_group(
 
 
 def write_reasoning_table_tex(
-    df: pd.DataFrame, out_path: Path, max_reason_len: int = 60
+    df: pd.DataFrame, out_path: Path
 ) -> None:
     cols = [
         "group",
@@ -120,28 +120,24 @@ def write_reasoning_table_tex(
     present = [c for c in cols if c in df.columns]
     df = df[present].copy()
     df["reasoning"] = df["reasoning"].astype(str)
-    df["reasoning_trunc"] = df["reasoning"].str.slice(0, max_reason_len)
-    df.loc[df["reasoning"].str.len() > max_reason_len, "reasoning_trunc"] = (
-        df.loc[df["reasoning"].str.len() > max_reason_len, "reasoning_trunc"] + "…"
-    )
 
     lines: list[str] = []
     lines.append(r"\setlength{\tabcolsep}{4pt}")
     lines.append(
         r"\begin{longtable}{P{0.05\textwidth}P{0.05\textwidth}P{0.07\textwidth}"
         r"P{0.08\textwidth}P{0.06\textwidth}P{0.06\textwidth}P{0.06\textwidth}"
-        r"P{0.28\textwidth}}"
+        r"P{0.45\textwidth}}"
     )
     lines.append(
         r"\caption{LLMs 决策 reasoning 抽样（每组 8 条，固定随机种子）}"
         r"\label{tab:reasoning_samples}\\"
     )
     lines.append(r"\toprule")
-    lines.append(r"组别 & Step & Agent & 占比 & 条数 & 概率 & 采纳 & 摘要 \\")
+    lines.append(r"组别 & Step & Agent & 占比 & 条数 & 概率 & 采纳 & 完整决策推演过程（Reasoning） \\")
     lines.append(r"\midrule")
     lines.append(r"\endfirsthead")
     lines.append(r"\toprule")
-    lines.append(r"组别 & Step & Agent & 占比 & 条数 & 概率 & 采纳 & 摘要 \\")
+    lines.append(r"组别 & Step & Agent & 占比 & 条数 & 概率 & 采纳 & 完整决策推演过程（Reasoning） \\")
     lines.append(r"\midrule")
     lines.append(r"\endhead")
     lines.append(r"\midrule")
@@ -158,7 +154,7 @@ def write_reasoning_table_tex(
         wom_count = str(row.get("wom_count", ""))
         prob = str(row.get("probability", ""))
         adopt = "T" if bool(row.get("adopt_final", False)) else "F"
-        reasoning = _latex_escape(str(row.get("reasoning_trunc", "")))
+        reasoning = _latex_escape(str(row.get("reasoning", "")))
         line = (
             f"{group} & {step} & {agent} & {adopted_ratio} & "
             f"{wom_count} & {prob} & {adopt} & {reasoning} \\\\"
