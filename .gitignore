@@ -89,8 +89,10 @@ _local_meta/
 THESIS_OUTLINE.md
 
 # Research workspace
-research/
+# Local notebooks
+notebooks/
 .trae/
+research/
 
 # LaTeX
 *.aux
