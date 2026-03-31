@@ -1,10 +1,10 @@
-# 🚀 环境配置指南
+# 环境配置指南
 
 **最后更新**: 2026-03-11
 
 ---
 
-## 📋 前置要求
+## 前置要求
 
 | 工具 | 版本 | 用途 | 安装命令 |
 |------|------|------|----------|
@@ -15,7 +15,7 @@
 
 ---
 
-## 🔧 Python 环境配置
+## Python 环境配置
 
 ### 1. 创建虚拟环境
 
@@ -50,18 +50,18 @@ import networkx as nx
 import pandas as pd
 import numpy as np
 
-print('✅ Mesa:', mesa.__version__)
-print('✅ NetworkX:', nx.__version__)
-print('✅ pandas:', pd.__version__)
-print('✅ numpy:', np.__version__)
+print('Mesa:', mesa.__version__)
+print('NetworkX:', nx.__version__)
+print('pandas:', pd.__version__)
+print('numpy:', np.__version__)
 print()
-print('🎉 Python 环境配置完成！')
+print('Python 环境配置完成')
 "
 ```
 
 ---
 
-## 🦫 Go 环境配置
+## Go 环境配置
 
 ### 1. 安装 Go
 
@@ -107,7 +107,7 @@ ls -lh bin/
 
 ---
 
-## 🔑 API Key 配置
+## API Key 配置
 
 ### 1. 复制环境变量模板
 
@@ -124,7 +124,7 @@ vim .env
 nano .env
 ```
 
-### 3. 填入你的 API Key
+### 3. 填入 API Key
 
 ```bash
 # LLM 配置
@@ -153,33 +153,22 @@ LLM_SERVER_ADDR=127.0.0.1:18080
 
 ---
 
-## ✅ 验证环境
+## 验证环境
 
 ### Python 测试
 
 ```bash
 cd llm-abm-wom-diffusion
 
-# 一键运行当前正式实验
-bash scripts/run_batch.sh
+# 运行一个小规模验证批次
+EXP_GROUPS_OVERRIDE="A B" \
+REPETITIONS=1 \
+N_AGENTS=10 \
+N_STEPS=5 \
+bash scripts/run_experiment.sh
 ```
 
-**预期输出（示意）**:
-```
-🚀 开始批量实验 (Batch Experiment)
-✅ Python 虚拟环境已激活 (.venv)
-📋 实验参数:
-  并行 workers：4
-  LLM 最大并发请求：50
-  单步决策重试次数：2
-  单步重试退避起始秒数：1
-  UI 刷新秒数：1
-╭────────────────────────────────────── Batch UI ───────────────────────────────────────╮
-│ Formal Batch Live Board                              elapsed=8.0s  done=1/60 failed=0 │
-╰───────────────────────────────────────────────────────────────────────────────────────╯
-```
-
-说明：默认启用 Rich Live 原地刷新，不会持续刷屏。分组看板持续显示 `Rate μ/max` 与 `Calls(done)`，便于在运行中直接观察四组关键差异。批次会稳定落盘 `batch_summary.csv`、`metrics_*.json`、`adoption_timeline_*.csv`、`batch_events.jsonl` 与 `simulation_*.csv`。其中 `adoption_timeline_*.csv` 包含每步采纳率并标注 `is_checkpoint`（默认每 10 步 + 最终步）。单次 run 内决策失败会先在当前 step 局部重试（`LLM_DECISION_RETRY_ATTEMPTS`、`LLM_DECISION_RETRY_BACKOFF_SECONDS`），局部重试耗尽后才进入 run 级重试。当前批量建议从 `REPETITION_WORKERS=4` 起步。
+结果会落盘到 `data/results/verify_<时间戳>/`（具体路径会在脚本结束时打印）。
 
 ### Go 测试 (可选，单独排查时使用)
 
@@ -279,7 +268,7 @@ pip install -r python/requirements.txt
 
 ---
 
-## 📊 环境检查清单
+## 环境检查清单
 
 - [ ] Python 3.11+ 已安装
 - [ ] Go 1.23+ 已安装 (可选)

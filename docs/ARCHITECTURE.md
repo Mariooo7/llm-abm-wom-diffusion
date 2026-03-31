@@ -6,7 +6,7 @@
 
 ---
 
-## 📋 架构概述
+## 架构概述
 
 ### 设计原则
 
@@ -52,7 +52,7 @@
 
 ---
 
-## 🐍 Python 模块设计
+## Python 模块设计
 
 ### python/models/
 
@@ -133,7 +133,7 @@ def compute_network_metrics(G: nx.Graph) -> dict
 
 ---
 
-## 🦫 Go 模块设计
+## Go 模块设计
 
 ### go/cmd/
 
@@ -149,7 +149,7 @@ func main() {
 
 ---
 
-## 🔌 模块间通信
+## 模块间通信
 
 ### 当前实现状态（2026-03-10）
 
@@ -174,7 +174,7 @@ result = decision_client.decide(req, context_key)
 
 ---
 
-## 📊 数据流
+## 数据流
 
 ### 仿真流程
 
@@ -400,91 +400,28 @@ func buildDecisionInstruction() string {
 
 ---
 
-## 🧪 测试策略
+## 运行与检查
 
-### 单元测试
+本仓库当前没有单独维护的 `tests/` 目录。工程侧的基本检查主要是“能跑 + 可复现 + 可定位问题”：
 
-```python
-# tests/test_model.py
-def test_diffusion_model_initialization():
-    config = get_config("A")
-    model = DiffusionModel(config)
-    
-    assert len(model.population) == 200
-    assert model.network.number_of_nodes() == 200
-    assert model.current_step == 0
-```
+- Go：`cd go && go test ./...`
+- Python：按需执行静态检查（例如 `ruff` / `mypy`），并跑一次小规模 `smoke` 或 `formal_batch` 验证链路
+- 论文编译：`research/paper/` 下按 `xelatex -> biber -> xelatex` 的常规链路编译
 
-```go
-// internal/agents/agent_test.go
-func TestNewSimulationAgent(t *testing.T) {
-    config := AgentConfig{ID: 1, Age: 30}
-    agent, err := NewSimulationAgent(context.Background(), config, nil)
-    
-    if err != nil {
-        t.Fatalf("Failed to create agent: %v", err)
-    }
-    if agent.Config.ID != 1 {
-        t.Errorf("Expected ID 1, got %d", agent.Config.ID)
-    }
-}
-```
+## 性能与成本
 
-### 集成测试
+这套系统的主要瓶颈来自外部 LLM 调用。当前策略是控制并发与失败语义，而不是改变仿真语义：
 
-```python
-# tests/test_integration.py
-def test_full_simulation():
-    config = get_config("A")
-    model = DiffusionModel(config)
-    
-    while model.running:
-        model.step()
-    
-    metrics = model.get_metrics()
-    assert 0 < metrics["final_adoption_rate"] <= 1.0
-```
+- 并发粒度：仅在 repetition 级并行；单次 run 内保持随机异步更新、逐个 agent 决策
+- 网关限流：Go 网关通过 `LLM_MAX_INFLIGHT` 控制并发请求上限
+- 重试策略：区分“单步决策重试”和“run 级重试”，避免短暂波动导致整轮重跑
 
----
+## 风险与应对
 
-## 📈 性能优化
+技术风险：
+- LLM API 不稳定或限流：重试耗尽后 fail-fast，并在批次汇总中记录失败信息，后续补跑
+- 参数/文档不一致：以 `experiments/configs/*.yaml` 与 `.env` 为单一事实来源，文档随代码同步更新
 
-### 优化策略
-
-1. **批量 LLM 调用**: 多个智能体决策合并为一次 API 调用
-2. **缓存机制**: 相同状态的决策结果缓存
-3. **并行仿真**: 不同 repetition 并行运行
-4. **网关稳态运行**: 统一 Go 服务配置与健康检查，避免路径分叉
-
-### 性能目标
-
-| 指标 | 目标 | 测量方式 |
-|------|------|----------|
-| 单次仿真时间 | < 5 分钟 | 200  agents, 100 steps |
-| 批量实验时间 | < 2 小时 | 4 groups × 20 reps |
-| LLM 调用延迟 | < 500ms | P95 latency |
-| 内存占用 | < 1GB | Peak RSS |
-
----
-
-## 🚨 风险管理
-
-### 技术风险
-
-| 风险 | 影响 | 概率 | 缓解措施 |
-|------|------|------|----------|
-| LLM API 不稳定 | 高 | 中 | 失败即中止并记录失败批次，后续补跑 |
-| Go-Python 通信开销 | 中 | 中 | 本地调用 + 批量处理 |
-| 仿真时间过长 | 高 | 低 | 并行化 + 性能优化 |
-
-### 数据风险
-
-| 风险 | 影响 | 概率 | 缓解措施 |
-|------|------|------|----------|
-| 结果不可复现 | 高 | 低 | 固定随机种子 + 版本控制 |
-| 数据丢失 | 高 | 低 | 实时保存 + 断点续跑 |
-| 异常值影响 | 中 | 中 | 统计检验 + 敏感性分析 |
-
----
-
-*文档应随项目进展持续更新*
+数据风险：
+- 结果不可复现：固定随机种子，配置与脚本纳入版本控制
+- 数据丢失：每次 run 写入独立输出文件，批次另有汇总与事件日志

@@ -22,7 +22,7 @@
 - UI 可用性增强（保持原布局）：
   - `formal_batch` 分组面板新增持续动态指标：`Rate μ/max`、`Calls(done)`
   - 非交互终端的 `compact` 摘要同步增加分组 `r=均值/最大`、`c=累计调用`，避免仅看进度条
-  - 代码位置：`python/run_preflight.py`
+  - 代码位置：`python/run_experiment.py`
 - 高并发稳定性与最优参数探测：
   - `concurrency_sweep`（group=A，2~10，并发每档 2 轮）全部成功，`stable_max_no_failure=10`
   - `formal_batch` 实测（A/B/C/D）：
@@ -37,14 +37,14 @@
 
 ## 工程扫描与清理（2026-03-17）
 - 范围：日志输出、过程记录、结果落盘、脚本有效性、空目录与无效历史产物
-- 记录增强（`python/run_preflight.py`）：
+- 记录增强（`python/run_experiment.py`）：
   - `formal_batch` 增加批次事件日志 `batch_events.jsonl`（`batch_start/run_start/run_progress/run_done/run_failed/batch_done`）
   - 过程曲线落盘 `adoption_timeline_*.csv`，包含每步采纳率并标注 `is_checkpoint`（默认每 10 步与最终步）
   - 批次汇总新增速度与过程指标：`t10_step`、`t50_step`、`auc_adoption`
   - 汇总索引新增 `adoption_timeline_file`，便于从 `batch_summary.csv` 追溯到单 run 过程轨迹
 - 脚本与文档一致性修复：
-  - `scripts/run_batch.sh` 默认并行恢复并固定为 `REPETITION_WORKERS=4`
-  - 统一批量脚本为单一路径：直接运行 `python/run_preflight.py`，移除 `script` 封装分支，降低终端兼容差异导致的刷屏概率
+  - `scripts/run_experiment.sh` 作为统一入口脚本（默认并行，`REPETITION_WORKERS=4`）
+  - 批量运行统一调用 `python/run_experiment.py --mode formal_batch`
   - 批量脚本结束摘要改为打印实际输出路径：`batch_summary.csv`、`metrics_*.json`、`adoption_timeline_*.csv`、`batch_events.jsonl`、`simulation_*.csv`
   - 清理文档中的失效引用（如已删除的 `main.py`、不存在的 `scripts/analyze_results.py`、过期目录结构）
 - 资产清理原则：
@@ -62,18 +62,17 @@
 - 单一来源原则：
   - 研究参数仅在 `experiments/configs/group_*.yaml`（网络、WOM、Bass、simulation）
   - 模型/网关参数仅在 `.env`（provider/model/base_url/temperature/timeout/server）
-  - 运行调度参数仅在 `scripts/run_batch.sh` 默认值与命令行覆盖（workers/retries/inflight）
+  - 运行调度参数仅在 `scripts/run_experiment.sh` 默认值与命令行覆盖（workers/retries/inflight）
 - 已执行清理：
   - 移除四组配置中的 `llm:` 段，避免与 `.env` 重复
   - 精简 `.env/.env.example`：移除实验调度与无效项，仅保留长期稳定项
   - `python/config/settings.py` 改为环境变量优先读取模型参数，避免组配置与环境配置双源冲突
 - 预实验入口收敛：
-  - `scripts/run_pilot.sh` 保留为便捷入口，但内部统一调用 `python/run_preflight.py --mode smoke`
-  - 结论：`run_pilot` 不是第二套实验逻辑，而是 `run_preflight` 的薄包装入口
+  - 直接通过 `scripts/run_experiment.sh` 的环境变量覆盖进行最小验证（如 `N_AGENTS/N_STEPS/REPETITIONS`）
 
 ## 工程优化记录（2026-03-13）
 - 目标：提升批量运行可观测性，避免只能等待 `log_interval` 才看到进度
-- 改动文件：`python/run_preflight.py`
+- 改动文件：`python/run_experiment.py`
 - 实施内容：
   - `formal_batch` 新增 1 秒刷新看板：总览（queued/running/retrying/done/failed）+ 分组进度 + 活跃任务
   - 单 run 增加 progress hook，将 `step/rate/attempt/status` 实时回传到看板
@@ -92,7 +91,7 @@
 - 目标：清理冗余实现、降低重试语义分叉风险，并提升代码可读性
 - 冗余/矛盾治理：
   - 将“可重试错误判定”统一收敛为 `python/llm/decision_client.py::is_retriable_decision_error_message`
-  - `run_preflight.py` 与 `model.py` 不再各自维护一套关键字，避免后续一处更新另一处遗漏
+  - `run_experiment.py` 与 `model.py` 不再各自维护一套关键字，避免后续一处更新另一处遗漏
 - 运行容错语义补强：
   - `model.step` 中新增“单步决策级重试”路径，失败先在当前 step 局部重试
   - 仅在局部重试耗尽后，才向上触发 run 级重试，减少弱组长跑时整轮重跑概率
@@ -106,15 +105,15 @@
 ## 终端可视化升级（2026-03-13，续）
 - 目标：解决批量实验输出刷屏问题，改为清晰、简洁、可视化的单屏面板
 - 改动文件：
-  - `python/run_preflight.py`
-  - `scripts/run_batch.sh`
+  - `python/run_experiment.py`
+  - `scripts/run_experiment.sh`
   - `python/requirements.txt`
 - 实施内容：
 -  - `formal_batch` 新增 Rich Live 面板，原地刷新，不追加滚动日志
   - 面板固定展示：总览状态、分组进度条、活跃任务表、最近事件
 -  - 增加 UI 参数：`UI_REFRESH_SECONDS`
 -  - 非交互终端或 Rich 不可用时自动回退低频 `compact` 摘要输出，保证兼容与可读性
-  - `run_batch.sh` 在 `live` 模式使用 `script -q` 记录终端输出到日志文件，避免 `tee` 破坏动态渲染
+  - `run_experiment.sh` 可按需记录终端输出；Rich Live 模式下不建议通过 `tee` 直接管道转存
 - 极小规模验证：
   - 命令：A/B 两组，`n_agents=8`，`n_steps=4`，`repetitions=1`，`workers=2`
   - 结果：`success_runs=2`，`failed_runs=0`，面板稳定显示且无刷屏
@@ -198,13 +197,13 @@
 - 参数冻结更新：
   - 四组统一 `p=0.003`、`q=0.10`
   - 四组统一 `share_multiplier=1.0`
-  - 强组（A/C）：`strength=strong`、`emotion_arousal=0.8`、`high_arousal_ratio=0.8`
-  - 弱组（B/D）：`strength=weak`、`emotion_arousal=0.2`、`high_arousal_ratio=0.2`
+  - 强组（A/C）：`strength=strong`、`high_arousal_ratio=0.6`
+  - 弱组（B/D）：`strength=weak`、`high_arousal_ratio=0.3`
 - 代码变更范围：
   - 配置映射：`python/config/settings.py` 新增 `wom_high_arousal_ratio`
   - 传播逻辑：`python/models/model.py` 改为每次分享按概率选择 `high/low` 桶，并记录 high/low 发送计数
   - 决策提示词：`go/cmd/main.go` 与 `python/llm/decision_client.py` 移除静态的 `emotion_arousal` 输入，让 LLM 纯靠阅读 WOM 文本感知情绪
-  - 输出可观测性：`python/run_preflight.py` 的 `batch_summary.csv` 新增 `wom_strength/wom_bucket/wom_high_arousal_ratio/messages_sent_high/messages_sent_low`
+  - 输出可观测性：`python/run_experiment.py` 的 `batch_summary.csv` 新增 `wom_strength/wom_bucket/wom_high_arousal_ratio/messages_sent_high/messages_sent_low`
   - 实验配置：`experiments/configs/group_{a,b,c,d}.yaml` 新增 `wom.high_arousal_ratio` 并统一 Bass 参数
 - 参考依据（写作引用候选）：
   - Berger, J., & Milkman, K. L. (2012). What Makes Online Content Viral?
@@ -330,13 +329,13 @@
 - 四组配置统一调整：
   - `avg_degree: 8 -> 6`
   - `llm.timeout_seconds: 120 -> 180`
-- 批量脚本稳态优化（`scripts/run_batch.sh`）：
+- 批量脚本稳态优化（`scripts/run_experiment.sh`）：
   - 默认 `REPETITION_WORKERS: 4 -> 3`
   - 默认 `TIMEOUT_SECONDS: 180 -> 210`
   - 新增保护：当 `REPETITION_WORKERS > LLM_MAX_INFLIGHT` 时自动下调，避免调度层过载
-- 预实验脚本一致性优化（`scripts/run_pilot.sh`）：
-  - 与批量脚本对齐，自动加载 `.env`
-  - 启动前检查 `LLM_API_KEY` 与 `go` 可用性，减少“跑到中途才失败”的无效开销
+- 预实验入口：
+  - 通过 `scripts/run_experiment.sh` 的环境变量覆盖进行小规模验证（例如覆盖 `N_AGENTS/N_STEPS/REPETITIONS`）
+  - 启动前检查 `LLM_API_KEY` 与 `go` 可用性，减少无效运行
 - 文档同步：
   - `.env.example` 已补齐批量运行常用覆盖变量
   - `README.md`、`docs/ENV_SETUP.md` 已同步最新默认值和脚本行为
