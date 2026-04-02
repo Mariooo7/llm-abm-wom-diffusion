@@ -18,6 +18,7 @@ dependencies = [
     "loguru>=0.7.3",
     "openai>=1.60.0",
     "pytest>=9.0.2",
+    "pingouin>=0.6.1",
 ]
 
 [project.optional-dependencies]

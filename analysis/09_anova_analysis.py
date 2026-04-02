@@ -54,8 +54,8 @@ for _, row in anova_results.iterrows():
         p_val = "-"
     else:
         f_val = f"{row['F']:.2f}"
-        p_val = f"{row['p-unc']:.4f}"
-        if row['p-unc'] < 0.001:
+        p_val = f"{row['p_unc']:.4f}"
+        if row['p_unc'] < 0.001:
             p_val = "<0.001"
             
     tex_lines.append(f"        {source} & {ss} & {df_val} & {ms} & {f_val} & {p_val} \\\\")

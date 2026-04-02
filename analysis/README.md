@@ -22,8 +22,9 @@
 
 ### 阶段二：统计检验 (Statistical Inference)
 **目标产出**：终端打印或文本输出的 ANOVA 表格。
-- **检验 1**: 最终采纳率的 Two-way ANOVA (Network Type × WOM Strength)。
-- **检验 2**: T50 (扩散速度) 的 Two-way ANOVA (仅在强组 A/C 间重点比较)。
+- **检验 1**: 最终采纳率的 Two-way ANOVA (Network Type × WOM Strength) → `09_anova_analysis.py`
+- **检验 2**: 峰值扩散速度的 Two-way ANOVA (H3) → `10_anova_speed.py`
+- **检验 3**: T50 (扩散速度) 的 One-way ANOVA (仅在强组 A/C 间重点比较) → `02_statistical_tests.py`
 
 ### 阶段三：学术可视化 (Data Visualization)
 **目标产出**：直接用于论文的图表文件（存放在 `analysis/figures/` 下）。
